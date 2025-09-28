@@ -1,16 +1,8 @@
-export type ProviderCategory =
-  | "official" // 官方
-  | "cn_official" // 国产官方
-  | "aggregator" // 聚合网站
-  | "third_party" // 第三方供应商
-  | "custom"; // 自定义
-
 export interface Provider {
   id: string;
   name: string;
   settingsConfig: Record<string, any>; // Claude settings.json 配置对象
   websiteUrl?: string;
-  category?: ProviderCategory;
   createdAt?: number; // 添加时间戳（毫秒）
 }
 

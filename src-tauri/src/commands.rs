@@ -176,6 +176,37 @@ pub async fn get_claude_config_status() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+pub async fn get_claude_config() -> Result<serde_json::Value, String> {
+    let exists = config::claude_config_exists();
+    let path = config::get_claude_config_path().unwrap_or_default();
+    
+    if exists {
+        match config::read_claude_config() {
+            Ok(content) => {
+                Ok(serde_json::json!({
+                    "exists": true,
+                    "content": content,
+                    "path": path.to_string_lossy()
+                }))
+            }
+            Err(e) => {
+                Ok(serde_json::json!({
+                    "exists": true,
+                    "content": null,
+                    "path": path.to_string_lossy(),
+                    "error": e
+                }))
+            }
+        }
+    } else {
+        Ok(serde_json::json!({
+            "exists": false,
+            "path": path.to_string_lossy()
+        }))
+    }
+}
+
+#[tauri::command]
 pub async fn get_claude_config_path() -> Result<String, String> {
     let path = config::get_claude_config_path()?;
     Ok(path.to_string_lossy().to_string())

@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { Provider } from '../../types';
-import { X, Save } from 'lucide-react';
-import { buttonStyles, inputStyles, modalStyles } from '../../lib/styles';
+import { Save } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
 
 interface EditProviderModalProps {
   provider: Provider;
@@ -13,7 +17,6 @@ function EditProviderModal({ provider, onSave, onClose }: EditProviderModalProps
   const [formData, setFormData] = useState({
     name: provider.name,
     websiteUrl: provider.websiteUrl || '',
-    category: provider.category || 'custom',
     configJson: JSON.stringify(provider.settingsConfig, null, 2),
   });
 
@@ -30,7 +33,6 @@ function EditProviderModal({ provider, onSave, onClose }: EditProviderModalProps
         ...provider,
         name: formData.name.trim(),
         websiteUrl: formData.websiteUrl.trim() || undefined,
-        category: formData.category,
         settingsConfig,
       };
 
@@ -41,94 +43,70 @@ function EditProviderModal({ provider, onSave, onClose }: EditProviderModalProps
   };
 
   return (
-    <div className={modalStyles.backdrop} onClick={onClose}>
-      <div className={modalStyles.content} onClick={(e) => e.stopPropagation()}>
-        <div className="p-6">
-          {/* 头部 */}
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-              编辑供应商 - {provider.name}
-            </h2>
-            <button onClick={onClose} className={buttonStyles.icon}>
-              <X size={20} />
-            </button>
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>编辑供应商 - {provider.name}</DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">
+                供应商名称 *
+              </Label>
+              <Input
+                id="edit-name"
+                type="text"
+                required
+                value={formData.name}
+                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-website">
+                官网地址（可选）
+              </Label>
+              <Input
+                id="edit-website"
+                type="url"
+                value={formData.websiteUrl}
+                onChange={(e) => setFormData(prev => ({ ...prev, websiteUrl: e.target.value }))}
+                placeholder="https://example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-config">
+                配置 JSON *
+              </Label>
+              <Textarea
+                id="edit-config"
+                required
+                rows={12}
+                value={formData.configJson}
+                onChange={(e) => setFormData(prev => ({ ...prev, configJson: e.target.value }))}
+                className={`font-mono text-sm ${error ? 'border-red-500 focus-visible:ring-red-500' : ''}`}
+              />
+              {error && (
+                <p className="text-sm text-red-600">{error}</p>
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleSubmit}>
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  供应商名称 *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className={inputStyles.base}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  官网地址（可选）
-                </label>
-                <input
-                  type="url"
-                  value={formData.websiteUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, websiteUrl: e.target.value }))}
-                  className={inputStyles.base}
-                  placeholder="https://example.com"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  供应商分类
-                </label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value }))}
-                  className={inputStyles.base}
-                >
-                  <option value="official">官方</option>
-                  <option value="cn_official">国产官方</option>
-                  <option value="aggregator">聚合平台</option>
-                  <option value="third_party">第三方</option>
-                  <option value="custom">自定义</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  配置 JSON *
-                </label>
-                <textarea
-                  required
-                  rows={12}
-                  value={formData.configJson}
-                  onChange={(e) => setFormData(prev => ({ ...prev, configJson: e.target.value }))}
-                  className={`${inputStyles.base} font-mono text-sm ${error ? inputStyles.error : ''}`}
-                />
-                {error && (
-                  <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-3">
-              <button type="button" onClick={onClose} className={buttonStyles.secondary}>
-                取消
-              </button>
-              <button type="submit" className={buttonStyles.primary}>
-                <Save size={16} className="mr-2" />
-                保存
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
+          <DialogFooter>
+            <Button type="button" onClick={onClose} variant="neutral">
+              取消
+            </Button>
+            <Button type="submit">
+              <Save size={16} />
+              保存
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

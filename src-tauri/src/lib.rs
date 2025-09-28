@@ -248,6 +248,7 @@ pub fn run() {
             commands::switch_provider,
             commands::import_current_config_as_default,
             commands::get_claude_config_status,
+            commands::get_claude_config,
             commands::get_claude_config_path,
             commands::open_config_folder,
             commands::pick_directory,

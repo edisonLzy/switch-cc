@@ -1,0 +1,169 @@
+@import "tailwindcss";
+
+/* Base styles */
+:root {
+  color-scheme: light dark;
+  /* Neobrutalism color variables */
+  --main: #FFFF00;
+  --main-foreground: #000000;
+  --background: #FFFFFF;
+  --foreground: #000000;
+  --border: #000000;
+  --secondary-background: #EFEFEF;
+}
+
+.dark {
+  /* Dark mode colors */
+  --main: #FFFF00;
+  --main-foreground: #000000;
+  --background: #1A1A1A;
+  --foreground: #FFFFFF;
+  --border: #FFFFFF;
+  --secondary-background: #2A2A2A;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  place-items: center;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-weight: 500;
+  line-height: 1.5;
+  font-size: 14px;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  margin: 0 auto;
+  text-align: center;
+}
+
+/* Apply color variables */
+.bg-main { background-color: var(--main); }
+.text-main-foreground { color: var(--main-foreground); }
+.bg-background { background-color: var(--background); }
+.text-foreground { color: var(--foreground); }
+.border-border { border-color: var(--border); }
+.bg-secondary-background { background-color: var(--secondary-background); }
+
+/* Update shadow to use current border color */
+.shadow-shadow {
+  box-shadow: 4px 4px 0px 0px var(--border);
+}
+
+/* Cursor styles for better UX */
+button, [role="button"] {
+  cursor: pointer;
+}
+
+button:disabled, [role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+a, [role="link"] {
+  cursor: pointer;
+}
+
+input, textarea, select {
+  cursor: text;
+}
+
+input[type="checkbox"], input[type="radio"] {
+  cursor: pointer;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-move {
+  cursor: move;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grab:active {
+  cursor: grabbing;
+}
+
+.cursor-resize {
+  cursor: ew-resize;
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+/* Interactive elements hover states */
+button:hover:not(:disabled), [role="button"]:hover:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+/* Custom scrollbar with neobrutalism style */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--secondary-background);
+  border: 2px solid var(--border);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--main);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--foreground);
+}
+
+/* Smooth transitions for dark mode */
+* {
+  transition-property: background-color, border-color, color, box-shadow;
+  transition-duration: 0.15s;
+  transition-timing-function: ease-in-out;
+}
+
+/* Remove transitions from buttons to keep neobrutalism snappiness */
+button, [role="button"] {
+  transition: transform 0.1s ease-in-out;
+}
+
+/* Neobrutalism specific animations */
+.hover\:translate-x-boxShadowX:hover {
+  transform: translateX(4px) translateY(4px);
+}
+
+.hover\:translate-y-boxShadowY:hover {
+  transform: translateX(4px) translateY(4px);
+}
+
+.hover\:shadow-none:hover {
+  box-shadow: none;
+}
+
+/* Focus styles for accessibility */
+button:focus-visible, 
+input:focus-visible, 
+textarea:focus-visible, 
+select:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--main);
+  outline-offset: 2px;
+}
+
+/* Text selection */
+::selection {
+  background-color: var(--main);
+  color: var(--main-foreground);
+}

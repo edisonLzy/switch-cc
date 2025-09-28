@@ -5,9 +5,10 @@ import AddProviderModal from "./AddProviderModal";
 import EditProviderModal from "./EditProviderModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import SettingsModal from "./SettingsModal";
+import ClaudeConfigModal from "./ClaudeConfigModal";
 import { UpdateBadge } from "./UpdateBadge";
-import { Plus, Settings, Moon, Sun, Menu } from "lucide-react";
-import { buttonStyles } from "../../lib/styles";
+import { Plus, Settings, Moon, Sun, Eye } from "lucide-react";
+import { Button } from "../ui/button";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { extractErrorMessage } from "../../utils/errorUtils";
 import { api } from "../../lib/tauri-api";
@@ -30,6 +31,7 @@ function MainWindow() {
     onConfirm: () => void;
   } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
@@ -217,65 +219,47 @@ function MainWindow() {
     }
   };
 
-  // 切换到MenuBar模式
-  const switchToMenuBar = async () => {
-    try {
-      await api.setAppMode('menubar');
-    } catch (error) {
-      console.error("切换到MenuBar模式失败:", error);
-      showNotification("切换模式失败", "error");
-    }
-  };
-
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+    <div className="h-screen flex flex-col bg-background">
       {/* 顶部导航区域 - 固定高度 */}
-      <header className="flex-shrink-0 bg-white border-b border-gray-200 dark:bg-gray-900 dark:border-gray-800 px-6 py-4">
-        <div className="flex items-center justify-between">
+      <header className="flex-shrink-0 bg-background border-b-2 border-border px-6 py-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <a
-              href="https://github.com/edisonLzy/switch-cc"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xl font-semibold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors"
-              title="在 GitHub 上查看"
-            >
-              Switch CC
-            </a>
-            <button
+            <Button
               onClick={toggleDarkMode}
-              className={buttonStyles.icon}
+              variant="neutral"
+              size="icon"
               title={isDarkMode ? "切换到亮色模式" : "切换到暗色模式"}
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className={buttonStyles.icon}
-                title="设置"
-              >
-                <Settings size={18} />
-              </button>
-              <button
-                onClick={switchToMenuBar}
-                className={buttonStyles.icon}
-                title="切换到MenuBar模式"
-              >
-                <Menu size={18} />
-              </button>
-              <UpdateBadge onClick={() => setIsSettingsOpen(true)} />
-            </div>
+            </Button>
+            <Button
+              onClick={() => setIsClaudeConfigOpen(true)}
+              variant="neutral"
+              size="icon"
+              title="查看当前 Claude 配置"
+            >
+              <Eye size={18} />
+            </Button>
+            <Button
+              onClick={() => setIsSettingsOpen(true)}
+              variant="neutral"
+              size="icon"
+              title="设置"
+            >
+              <Settings size={18} />
+            </Button>
+            <UpdateBadge onClick={() => setIsSettingsOpen(true)} />
           </div>
 
           <div className="flex items-center gap-4">
-            <button
+            <Button
               onClick={() => setIsAddModalOpen(true)}
-              className={`inline-flex items-center gap-2 ${buttonStyles.primary}`}
+              className="inline-flex items-center gap-2"
             >
               <Plus size={16} />
               添加供应商
-            </button>
+            </Button>
           </div>
         </div>
       </header>
@@ -287,7 +271,7 @@ function MainWindow() {
             {/* 通知组件 - 相对于视窗定位 */}
             {notification && (
               <div
-                className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 ${
+                className={`fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-4 py-3 rounded-base border-2 border-border shadow-shadow transition-all duration-300 ${
                   notification.type === "error"
                     ? "bg-red-500 text-white"
                     : "bg-green-500 text-white"
@@ -336,6 +320,13 @@ function MainWindow() {
 
       {isSettingsOpen && (
         <SettingsModal onClose={() => setIsSettingsOpen(false)} />
+      )}
+
+      {isClaudeConfigOpen && (
+        <ClaudeConfigModal 
+          isOpen={isClaudeConfigOpen}
+          onClose={() => setIsClaudeConfigOpen(false)} 
+        />
       )}
     </div>
   );

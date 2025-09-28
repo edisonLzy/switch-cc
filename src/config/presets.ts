@@ -1,31 +1,9 @@
-import { Provider, ProviderCategory } from '../types';
+import { Provider } from '../types';
 
 // 预设供应商配置
 export const presetProviders: Omit<Provider, 'id' | 'createdAt'>[] = [
   {
-    name: 'Claude 官方',
-    category: 'official',
-    settingsConfig: {
-      env: {
-        ANTHROPIC_AUTH_TOKEN: ''
-      }
-    },
-    websiteUrl: 'https://claude.ai'
-  },
-  {
-    name: '阿里云百炼',
-    category: 'cn_official',
-    settingsConfig: {
-      env: {
-        ANTHROPIC_AUTH_TOKEN: 'your-api-key',
-        ANTHROPIC_BASE_URL: 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-      }
-    },
-    websiteUrl: 'https://bailian.console.aliyun.com'
-  },
-  {
     name: '智谱清言',
-    category: 'cn_official',
     settingsConfig: {
       env: {
         ANTHROPIC_AUTH_TOKEN: 'your-api-key',
@@ -35,34 +13,26 @@ export const presetProviders: Omit<Provider, 'id' | 'createdAt'>[] = [
     websiteUrl: 'https://open.bigmodel.cn'
   },
   {
-    name: 'OpenRouter',
-    category: 'aggregator',
+    name: 'AnyRouter',
     settingsConfig: {
       env: {
-        ANTHROPIC_AUTH_TOKEN: 'sk-or-v1-your-api-key',
-        ANTHROPIC_BASE_URL: 'https://openrouter.ai/api/v1'
+        ANTHROPIC_AUTH_TOKEN: 'your-anyrouter-api-key',
+        ANTHROPIC_BASE_URL: 'https://api.anyrouter.ai/v1'
       }
     },
-    websiteUrl: 'https://openrouter.ai'
+    websiteUrl: 'https://anyrouter.ai'
   },
   {
-    name: 'Together AI',
-    category: 'third_party',
+    name: 'PackyCode',
     settingsConfig: {
       env: {
-        ANTHROPIC_AUTH_TOKEN: 'your-together-api-key',
-        ANTHROPIC_BASE_URL: 'https://api.together.xyz/v1'
+        ANTHROPIC_AUTH_TOKEN: 'your-packycode-api-key', 
+        ANTHROPIC_BASE_URL: 'https://api.packycode.com/v1'
       }
     },
-    websiteUrl: 'https://together.ai'
+    websiteUrl: 'https://packycode.com'
   }
 ];
-
-// 根据分类获取预设
-export const getPresetsByCategory = (category?: ProviderCategory) => {
-  if (!category) return presetProviders;
-  return presetProviders.filter(preset => preset.category === category);
-};
 
 // 生成默认配置
 export const generateDefaultConfig = (baseUrl?: string, apiKey?: string) => {

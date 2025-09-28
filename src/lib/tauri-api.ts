@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { Provider, AppConfig, Settings, AppMode } from '../types';
+import { Provider, Settings, AppMode } from '../types';
 
 export class TauriAPI {
   // 获取所有供应商
@@ -43,9 +43,9 @@ export class TauriAPI {
     return await invoke('get_claude_config_status');
   }
 
-  // 获取Claude配置路径
-  async getClaudeConfigPath(): Promise<string> {
-    return await invoke('get_claude_config_path');
+  // 获取Claude配置内容
+  async getClaudeConfig(): Promise<{ exists: boolean; content?: any; path: string }> {
+    return await invoke('get_claude_config');
   }
 
   // 打开配置文件夹

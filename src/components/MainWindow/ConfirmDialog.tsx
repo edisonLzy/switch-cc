@@ -1,5 +1,6 @@
 import { AlertTriangle } from 'lucide-react';
-import { buttonStyles, modalStyles } from '../../lib/styles';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
+import { Button } from '../ui/button';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -16,38 +17,30 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  if (!isOpen) return null;
-
   return (
-    <div className={modalStyles.backdrop} onClick={onCancel}>
-      <div
-        className={`${modalStyles.content} max-w-md`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex-shrink-0 w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-              <AlertTriangle size={20} className="text-red-600 dark:text-red-400" />
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-base border-2 border-border flex items-center justify-center">
+              <AlertTriangle size={20} className="text-red-600" />
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {title}
-            </h3>
+            <DialogTitle className="text-left">{title}</DialogTitle>
           </div>
-          
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
+          <DialogDescription className="text-left mt-2">
             {message}
-          </p>
-          
-          <div className="flex justify-end gap-3">
-            <button onClick={onCancel} className={buttonStyles.secondary}>
-              取消
-            </button>
-            <button onClick={onConfirm} className={buttonStyles.danger}>
-              确认
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+          </DialogDescription>
+        </DialogHeader>
+        
+        <DialogFooter>
+          <Button onClick={onCancel} variant="neutral">
+            取消
+          </Button>
+          <Button onClick={onConfirm} variant="destructive">
+            确认
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
