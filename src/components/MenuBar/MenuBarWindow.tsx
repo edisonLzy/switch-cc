@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Provider } from '../../types';
 import { Settings, Monitor, Check, ChevronRight } from 'lucide-react';
 import { Button } from '../ui/button';
@@ -10,11 +10,64 @@ function MenuBarWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [currentProviderId, setCurrentProviderId] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadProviders();
     setupEventListeners();
-  }, []);
+    
+    // 设置键盘导航
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const providersList = Object.values(providers);
+      if (providersList.length === 0) return;
+      
+      // 只在没有输入框获得焦点时处理键盘导航
+      const activeElement = document.activeElement;
+      const isInputFocused = activeElement && (
+        activeElement.tagName === 'INPUT' ||
+        activeElement.tagName === 'TEXTAREA' ||
+        activeElement.tagName === 'SELECT' ||
+        activeElement.getAttribute('contenteditable') === 'true'
+      );
+      
+      if (isInputFocused) return;
+
+      switch (e.key) {
+        case 'ArrowDown':
+        case 'j': // vim-like navigation
+          e.preventDefault();
+          setSelectedIndex(prev => 
+            prev < providersList.length - 1 ? prev + 1 : 0
+          );
+          break;
+        case 'ArrowUp':
+        case 'k': // vim-like navigation
+          e.preventDefault();
+          setSelectedIndex(prev => 
+            prev > 0 ? prev - 1 : providersList.length - 1
+          );
+          break;
+        case 'Enter':
+        case ' ': // spacebar
+          e.preventDefault();
+          if (selectedIndex >= 0 && selectedIndex < providersList.length) {
+            const selectedProvider = providersList[selectedIndex];
+            handleSwitchProvider(selectedProvider.id);
+          }
+          break;
+        case 'Escape':
+          e.preventDefault();
+          setSelectedIndex(-1);
+          break;
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [providers, selectedIndex]);
 
   const loadProviders = async () => {
     try {
@@ -23,6 +76,7 @@ function MenuBarWindow() {
       const currentId = await api.getCurrentProvider();
       setProviders(loadedProviders);
       setCurrentProviderId(currentId);
+      setSelectedIndex(-1); // Reset selection when providers change
     } catch (error) {
       console.error('加载供应商列表失败:', error);
     } finally {
@@ -161,14 +215,18 @@ function MenuBarWindow() {
             </Button>
           </div>
         ) : (
-          <div className="py-2">
-            {providersList.map((provider) => (
+          <div className="py-2" ref={containerRef}>
+            {providersList.map((provider, index) => (
               <Button
                 key={provider.id}
                 onClick={() => handleSwitchProvider(provider.id)}
                 variant="ghost"
                 className={`w-full px-4 py-3 h-auto justify-start hover:bg-secondary-background hover:shadow-shadow hover:border-border rounded-none border-2 border-transparent group transition-all duration-200 ${
-                  provider.id === currentProviderId ? 'bg-main/20 border-main' : ''
+                  provider.id === currentProviderId 
+                    ? 'bg-main/20 border-main' 
+                    : selectedIndex === index
+                    ? 'bg-blue-50 dark:bg-blue-950/20 border-blue-500'
+                    : ''
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
@@ -204,13 +262,16 @@ function MenuBarWindow() {
           <Badge variant="neutral" className="text-xs">
             {providersList.length} 个供应商
           </Badge>
-          <Button
-            onClick={switchToMainWindow}
-            variant="ghost"
-            className="p-0 h-auto text-xs hover:text-main transition-colors"
-          >
-            管理供应商 →
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs opacity-70">↑↓ 导航 Enter 选择</span>
+            <Button
+              onClick={switchToMainWindow}
+              variant="ghost"
+              className="p-0 h-auto text-xs hover:text-main transition-colors"
+            >
+              管理供应商 →
+            </Button>
+          </div>
         </div>
       </div>
     </Card>
