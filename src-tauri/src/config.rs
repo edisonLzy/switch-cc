@@ -107,6 +107,54 @@ pub fn read_claude_config() -> Result<serde_json::Value, String> {
     Ok(config)
 }
 
+/// 合并 Claude 配置文件 - 只覆盖 provider 中指定的键
+pub fn merge_claude_config(provider_config: &serde_json::Value) -> Result<(), String> {
+    let config_path = get_claude_config_path()?;
+    
+    // 读取现有配置，如果不存在则创建默认配置
+    let mut current_config = if config_path.exists() {
+        read_claude_config()?
+    } else {
+        // 创建默认配置
+        serde_json::json!({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": ""
+            }
+        })
+    };
+    
+    // 递归合并配置
+    merge_json_objects(&mut current_config, provider_config);
+    
+    // 写入合并后的配置
+    write_claude_config(&current_config)?;
+    
+    Ok(())
+}
+
+/// 递归合并JSON对象 - 只覆盖provider中存在的键
+fn merge_json_objects(target: &mut serde_json::Value, source: &serde_json::Value) {
+    if let serde_json::Value::Object(source_map) = source {
+        if let serde_json::Value::Object(target_map) = target {
+            for (key, source_value) in source_map {
+                if let Some(target_value) = target_map.get_mut(key) {
+                    // 如果目标中已有该键，递归合并
+                    merge_json_objects(target_value, source_value);
+                } else {
+                    // 如果目标中没有该键，直接添加
+                    target_map.insert(key.clone(), source_value.clone());
+                }
+            }
+        } else {
+            // 如果目标不是对象，直接替换
+            *target = source.clone();
+        }
+    } else {
+        // 如果源不是对象类型，直接替换
+        *target = source.clone();
+    }
+}
+
 /// 写入 Claude 配置文件
 pub fn write_claude_config(config: &serde_json::Value) -> Result<(), String> {
     let config_path = get_claude_config_path()?;

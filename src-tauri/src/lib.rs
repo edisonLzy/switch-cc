@@ -13,7 +13,7 @@ use tauri::{
 };
 
 /// 创建动态托盘菜单
-fn create_tray_menu(app: &tauri::AppHandle, app_state: &AppState) -> Result<Menu<tauri::Wry>, String> {
+pub fn create_tray_menu(app: &tauri::AppHandle, app_state: &AppState) -> Result<Menu<tauri::Wry>, String> {
     let config = app_state
         .config
         .lock()
@@ -112,7 +112,7 @@ async fn switch_provider_internal(
     if let Some(app_state) = app.try_state::<AppState>() {
         let provider_id_clone = provider_id.clone();
 
-        commands::switch_provider(app_state.clone().into(), provider_id).await?;
+        commands::switch_provider(app.clone(), app_state.clone().into(), provider_id).await?;
 
         // 切换成功后重新创建托盘菜单
         if let Ok(new_menu) = create_tray_menu(app, app_state.inner()) {

@@ -97,6 +97,7 @@ pub async fn delete_provider(
 
 #[tauri::command]
 pub async fn switch_provider(
+    app: AppHandle,
     state: State<'_, AppState>,
     provider_id: String,
 ) -> Result<bool, String> {
@@ -106,14 +107,31 @@ pub async fn switch_provider(
         .ok_or("供应商不存在")?
         .clone();
 
-    // 写入Claude配置文件
-    config::write_claude_config(&provider.settings_config)?;
+    // 合并Claude配置文件（只覆盖provider中指定的键）
+    config::merge_claude_config(&provider.settings_config)?;
     
     // 更新当前供应商
-    config.current = provider_id;
+    config.current = provider_id.clone();
     
     drop(config);
     state.save()?;
+    
+    // 更新托盘菜单
+    if let Ok(new_menu) = crate::create_tray_menu(&app, state.inner()) {
+        if let Some(tray) = app.tray_by_id("main") {
+            if let Err(e) = tray.set_menu(Some(new_menu)) {
+                log::error!("更新托盘菜单失败: {}", e);
+            }
+        }
+    }
+    
+    // 发射事件到前端
+    let event_data = serde_json::json!({
+        "providerId": provider_id
+    });
+    if let Err(e) = app.emit("provider-switched", event_data) {
+        log::error!("发射供应商切换事件失败: {}", e);
+    }
     
     Ok(true)
 }

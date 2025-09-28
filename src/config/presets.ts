@@ -38,13 +38,10 @@ export const presetProviders: Omit<Provider, 'id' | 'createdAt'>[] = [
 export const generateDefaultConfig = (baseUrl?: string, apiKey?: string) => {
   const config: Record<string, any> = {
     env: {
-      ANTHROPIC_AUTH_TOKEN: apiKey || 'your-api-key'
+      ANTHROPIC_AUTH_TOKEN: apiKey || 'your-api-key',
+      ANTHROPIC_BASE_URL: baseUrl || 'https://api.anthropic.com'
     }
   };
-
-  if (baseUrl) {
-    config.env.ANTHROPIC_BASE_URL = baseUrl;
-  }
 
   return config;
 };

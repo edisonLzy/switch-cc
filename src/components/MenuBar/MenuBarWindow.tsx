@@ -46,8 +46,8 @@ function MenuBarWindow() {
       const success = await api.switchProvider(providerId);
       if (success) {
         setCurrentProviderId(providerId);
-        // 更新托盘菜单
-        await api.updateTrayMenu();
+        // 供应商切换成功后会自动触发 provider-switched 事件
+        // 该事件会更新托盘菜单和触发重新加载
         // MenuBar模式下可以自动隐藏窗口
         setTimeout(() => {
           api.hideMenuBar();
