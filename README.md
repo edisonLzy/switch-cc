@@ -3,6 +3,9 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/edisonLzy/switch-cc/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/edisonLzy/switch-cc/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
+[![CI](https://github.com/edisonLzy/switch-cc/workflows/CI/badge.svg)](https://github.com/edisonLzy/switch-cc/actions/workflows/ci.yml)
+[![Auto Release](https://github.com/edisonLzy/switch-cc/workflows/Auto%20Release%20on%20Master/badge.svg)](https://github.com/edisonLzy/switch-cc/actions/workflows/auto-release.yml)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 一个专注于 Claude Code 配置管理和快速切换的桌面应用，提供主界面和 MenuBar 两种使用方式。
 
@@ -35,6 +38,20 @@
 ### 安装方式
 
 从 [Releases](../../releases) 页面下载对应平台的安装包。
+
+#### 📦 下载文件说明
+
+| 平台 | 文件类型 | 说明 |
+|------|---------|------|
+| **macOS** | `.dmg` | Universal Binary，支持Intel和Apple Silicon |
+| **Windows** | `.exe` | NSIS安装程序，Windows 10/11 x64 |
+| **Linux** | `.AppImage` | 便携版，无需安装直接运行 |
+| **Linux** | `.deb` | Debian/Ubuntu包管理器安装 |
+
+#### 🔄 自动更新
+- 每次代码合并到master分支时自动构建新版本
+- Release页面总是包含最新的稳定版本
+- 支持多平台同步发布
 
 ## 使用说明
 

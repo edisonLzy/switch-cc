@@ -1,0 +1,256 @@
+name: Auto Release on Master
+
+on:
+  push:
+    branches: [ master, main ]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
+      - '.gitignore'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 检查是否需要创建新版本
+  check-version:
+    name: Check Version
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.version-check.outputs.should-release }}
+      new-version: ${{ steps.version-check.outputs.new-version }}
+      version-changed: ${{ steps.version-check.outputs.version-changed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get current version
+        id: current-version
+        run: |
+          VERSION=$(grep '"version"' package.json | head -1 | sed 's/.*"version": *"\([^"]*\)".*/\1/')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Current version: ${VERSION}"
+
+      - name: Check if tag exists
+        id: tag-check
+        run: |
+          TAG="v${{ steps.current-version.outputs.version }}"
+          if git tag -l | grep -q "^${TAG}$"; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Tag ${TAG} already exists"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Tag ${TAG} does not exist"
+          fi
+
+      - name: Check version changes
+        id: version-check
+        run: |
+          CURRENT_VERSION="${{ steps.current-version.outputs.version }}"
+          TAG_EXISTS="${{ steps.tag-check.outputs.exists }}"
+          
+          if [ "${TAG_EXISTS}" = "false" ]; then
+            echo "should-release=true" >> $GITHUB_OUTPUT
+            echo "new-version=${CURRENT_VERSION}" >> $GITHUB_OUTPUT
+            echo "version-changed=true" >> $GITHUB_OUTPUT
+            echo "✅ 将创建新版本: v${CURRENT_VERSION}"
+          else
+            echo "should-release=false" >> $GITHUB_OUTPUT
+            echo "new-version=" >> $GITHUB_OUTPUT  
+            echo "version-changed=false" >> $GITHUB_OUTPUT
+            echo "❌ 版本 v${CURRENT_VERSION} 已存在，跳过发布"
+          fi
+
+  # 创建Git标签
+  create-tag:
+    name: Create Tag
+    needs: check-version
+    if: needs.check-version.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create and push tag
+        run: |
+          TAG="v${{ needs.check-version.outputs.new-version }}"
+          echo "Creating tag: ${TAG}"
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git tag -a "${TAG}" -m "Release ${TAG}"
+          git push origin "${TAG}"
+          
+          echo "✅ Tag ${TAG} created and pushed"
+
+  # 构建和发布
+  build-release:
+    name: Build and Release
+    needs: [check-version, create-tag]
+    if: needs.check-version.outputs.should-release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            target: 'universal-apple-darwin'
+          - platform: 'ubuntu-22.04'  
+            args: '--target x86_64-unknown-linux-gnu'
+            target: 'x86_64-unknown-linux-gnu'
+          - platform: 'windows-latest'
+            args: '--target x86_64-pc-windows-msvc'
+            target: 'x86_64-pc-windows-msvc'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.check-version.outputs.new-version }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Linux系统依赖
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev
+
+      # 构建前端
+      - name: Build frontend
+        run: pnpm build:renderer
+
+      # 使用Tauri Action构建和发布
+      - name: Build and Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v${{ needs.check-version.outputs.new-version }}
+          releaseName: 'Switch CC v${{ needs.check-version.outputs.new-version }}'
+          releaseBody: |
+            ## Switch CC v${{ needs.check-version.outputs.new-version }}
+            
+            🎉 **自动发布版本** - 合并到master分支时自动构建和发布
+            
+            ### 📦 下载安装
+            
+            | 平台 | 文件 | 说明 |
+            |------|------|------|
+            | **macOS** | `*.dmg` | 支持Intel和Apple Silicon |
+            | **Windows** | `*.exe` | Windows 10/11 x64 |
+            | **Linux** | `*.AppImage` / `*.deb` | Ubuntu 22.04+ |
+            
+            ### 🚀 主要功能
+            - ✨ 智能的Claude配置供应商管理
+            - 🔄 一键切换不同API供应商  
+            - 📱 MenuBar快速访问模式
+            - 🛡️ 安全的配置合并策略
+            - ⚡ 多界面实时同步
+            - 🎨 现代化Neobrutalism设计
+            
+            ### 🔧 使用方法
+            1. 下载对应平台的安装包
+            2. 安装并启动应用
+            3. 添加您的Claude API供应商配置
+            4. 在MenuBar或主界面快速切换
+            
+            ### 📋 更新内容
+            
+            本版本为自动构建版本，包含最新的代码更改和功能改进。
+            
+            详细更新日志请查看 [CHANGELOG.md](https://github.com/edisonLzy/switch-cc/blob/master/CHANGELOG.md)。
+            
+            ---
+            
+            如有问题或建议，欢迎提交 [Issue](https://github.com/edisonLzy/switch-cc/issues)。
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # 发布成功后的处理
+  post-release:
+    name: Post Release Tasks  
+    needs: [check-version, build-release]
+    if: success() && needs.check-version.outputs.should-release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update documentation
+        run: |
+          VERSION="${{ needs.check-version.outputs.new-version }}"
+          DATE=$(date +'%Y-%m-%d')
+          
+          # 更新CHANGELOG
+          echo "## v${VERSION} - ${DATE}" > CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          echo "### 🎉 自动发布" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          echo "- 📦 多平台构建产物自动生成" >> CHANGELOG_NEW.md  
+          echo "- 🚀 基于master分支最新代码构建" >> CHANGELOG_NEW.md
+          echo "- ✅ 通过GitHub Actions自动化流程" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          
+          if [ -f CHANGELOG.md ]; then
+            cat CHANGELOG.md >> CHANGELOG_NEW.md
+          fi
+          mv CHANGELOG_NEW.md CHANGELOG.md
+          
+          # 提交更新
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "📝 Update CHANGELOG for v${VERSION}" || exit 0
+          git push || exit 0
+
+      - name: Release Summary
+        run: |
+          VERSION="${{ needs.check-version.outputs.new-version }}"
+          echo "🎉 Switch CC v${VERSION} 发布完成！"
+          echo ""
+          echo "📊 发布摘要:"
+          echo "  • 版本: v${VERSION}"
+          echo "  • 构建时间: $(date)"
+          echo "  • 触发方式: 推送到master分支"
+          echo "  • 构建平台: macOS, Windows, Linux"
+          echo ""
+          echo "🔗 下载地址:"
+          echo "  https://github.com/edisonLzy/switch-cc/releases/tag/v${VERSION}"
+          echo ""
+          echo "✅ 所有构建产物已上传到GitHub Release"

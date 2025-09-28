@@ -1,0 +1,237 @@
+name: Release Build and Publish
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 检查和测试阶段
+  check:
+    name: Check and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript type check
+        run: pnpm typecheck
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust check
+        run: cargo check --manifest-path=src-tauri/Cargo.toml
+
+      - name: Rust format check
+        run: cargo fmt --manifest-path=src-tauri/Cargo.toml --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --manifest-path=src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+  # 构建阶段 - 多平台并行构建
+  build:
+    name: Build Application
+    needs: check
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target universal-apple-darwin'
+            target: 'universal-apple-darwin'
+            arch: 'universal'
+          - platform: 'ubuntu-22.04'
+            args: '--target x86_64-unknown-linux-gnu'
+            target: 'x86_64-unknown-linux-gnu'  
+            arch: 'amd64'
+          - platform: 'windows-latest'
+            args: '--target x86_64-pc-windows-msvc'
+            target: 'x86_64-pc-windows-msvc'
+            arch: 'x64'
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Linux专用：安装系统依赖
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      # macOS专用：安装Apple Developer证书（如果需要代码签名）
+      - name: Setup macOS keychain
+        if: matrix.platform == 'macos-latest' && env.APPLE_CERTIFICATE
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo $APPLE_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P $APPLE_CERTIFICATE_PASSWORD -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm certificate.p12
+
+      - name: Build frontend
+        run: pnpm build:renderer
+
+      - name: Build Tauri application
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 代码签名环境变量（可选）
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Switch CC v__VERSION__'
+          releaseBody: |
+            ## Switch CC v__VERSION__
+            
+            ### 🎉 新版本发布
+            
+            Switch CC 是一个专注于 Claude Code 配置管理和快速切换的桌面应用。
+            
+            ### 📦 支持平台
+            - **macOS**: Universal Binary (Intel + Apple Silicon)
+            - **Windows**: x64 
+            - **Linux**: x64 (Ubuntu 22.04+)
+            
+            ### 🚀 核心功能
+            - 🔄 智能供应商切换
+            - 📱 MenuBar快速访问  
+            - 🛡️ 配置安全合并
+            - 🎨 Neobrutalism界面设计
+            - ⚡ 多界面实时同步
+            
+            ### 📋 安装说明
+            
+            #### macOS
+            1. 下载 `Switch-CC_*_universal-apple-darwin.dmg`
+            2. 双击打开，拖拽到Applications文件夹
+            3. 首次运行可能需要在系统偏好设置中允许运行
+            
+            #### Windows  
+            1. 下载 `Switch-CC_*_x64-setup.exe`
+            2. 右键以管理员身份运行安装程序
+            3. 按照向导完成安装
+            
+            #### Linux
+            1. 下载 `switch-cc_*_amd64.AppImage` 或 `switch-cc_*_amd64.deb`
+            2. AppImage: 添加执行权限后直接运行
+            3. DEB: `sudo dpkg -i switch-cc_*_amd64.deb`
+            
+            ### 🔧 技术栈
+            - **前端**: React 18 + TypeScript + Tailwind CSS 4
+            - **后端**: Rust + Tauri 2.8
+            - **构建**: Vite + pnpm
+            
+            ---
+            
+            **完整更新日志**: [查看CHANGELOG.md](https://github.com/edisonLzy/switch-cc/blob/master/CHANGELOG.md)
+            
+            如有问题或建议，请提交 [Issue](https://github.com/edisonLzy/switch-cc/issues)。
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+
+  # 发布完成后的清理和通知
+  post-release:
+    name: Post Release
+    needs: build
+    if: success() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get release info
+        id: release_info
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Update CHANGELOG
+        run: |
+          echo "## Version ${{ steps.release_info.outputs.version }} - $(date +'%Y-%m-%d')" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md  
+          echo "- 🎉 Release build for version ${{ steps.release_info.outputs.version }}" >> CHANGELOG_NEW.md
+          echo "- 📦 Multi-platform binaries available" >> CHANGELOG_NEW.md
+          echo "- 🚀 Automated build and release process" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          if [ -f CHANGELOG.md ]; then
+            cat CHANGELOG.md >> CHANGELOG_NEW.md
+          fi
+          mv CHANGELOG_NEW.md CHANGELOG.md
+
+      # 可选：发送通知到Slack/Discord等
+      - name: Notify Success
+        if: success()
+        run: |
+          echo "✅ Switch CC v${{ steps.release_info.outputs.version }} 发布成功！"
+          echo "📦 多平台构建产物已上传到 GitHub Release"
+          echo "🔗 Release URL: https://github.com/edisonLzy/switch-cc/releases/tag/${{ steps.release_info.outputs.tag }}"
