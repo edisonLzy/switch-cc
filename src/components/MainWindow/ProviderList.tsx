@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Card, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -24,6 +24,8 @@ function ProviderList({
   onEdit,
 }: ProviderListProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const providerList = Object.values(providers);
   
   // 过滤供应商列表
@@ -37,6 +39,70 @@ function ProviderList({
       provider.name.toLowerCase().includes(term)
     );
   }, [providerList, searchTerm]);
+
+  // 重置选中索引当列表改变时
+  useEffect(() => {
+    setSelectedIndex(-1);
+  }, [filteredProviders]);
+
+  // 全局键盘事件监听
+  const handleGlobalKeyDown = useCallback((e: KeyboardEvent) => {
+    // 只在没有模态框、输入框或其他可编辑元素获得焦点时处理 "/" 键
+    const activeElement = document.activeElement;
+    const isInputFocused = activeElement && (
+      activeElement.tagName === 'INPUT' ||
+      activeElement.tagName === 'TEXTAREA' ||
+      activeElement.tagName === 'SELECT' ||
+      activeElement.getAttribute('contenteditable') === 'true'
+    );
+    
+    // 按 "/" 键聚焦到搜索框
+    if (e.key === '/' && !isInputFocused && e.target !== searchInputRef.current) {
+      e.preventDefault();
+      searchInputRef.current?.focus();
+    }
+  }, []);
+
+  // 搜索框键盘事件处理
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (filteredProviders.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIndex(prev => 
+          prev < filteredProviders.length - 1 ? prev + 1 : 0
+        );
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIndex(prev => 
+          prev > 0 ? prev - 1 : filteredProviders.length - 1
+        );
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (selectedIndex >= 0 && selectedIndex < filteredProviders.length) {
+          const selectedProvider = filteredProviders[selectedIndex];
+          onSwitch(selectedProvider.id);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        setSearchTerm('');
+        setSelectedIndex(-1);
+        searchInputRef.current?.blur();
+        break;
+    }
+  }, [filteredProviders, selectedIndex, onSwitch]);
+
+  // 设置全局键盘监听
+  useEffect(() => {
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [handleGlobalKeyDown]);
 
   if (providerList.length === 0) {
     return (
@@ -61,10 +127,12 @@ function ProviderList({
         <div className="relative flex-1">
           <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground/50" />
           <Input
+            ref={searchInputRef}
             type="text"
-            placeholder="搜索供应商..."
+            placeholder="搜索供应商... (按 / 快速聚焦，↑↓ 导航，Enter 切换)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
             className="pl-10"
           />
         </div>
@@ -88,14 +156,17 @@ function ProviderList({
         </div>
       ) : (
         <div className="grid gap-6">
-          {filteredProviders.map((provider) => (
+          {filteredProviders.map((provider, index) => (
           <Card
             key={provider.id}
             className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
               provider.id === currentProviderId
                 ? 'ring-4 ring-main'
+                : selectedIndex === index
+                ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950/20'
                 : 'hover:ring-2 hover:ring-border'
             }`}
+            onClick={() => onSwitch(provider.id)}
           >
             <CardHeader className="p-4">
               <div className="flex items-start justify-between">
