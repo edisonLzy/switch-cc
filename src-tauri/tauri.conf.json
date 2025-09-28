@@ -1,0 +1,78 @@
+{
+  "$schema": "https://schema.tauri.app/config/2.0.0",
+  "productName": "Switch CC",
+  "version": "1.0.0",
+  "identifier": "com.edison.switch-cc",
+  "build": {
+    "beforeDevCommand": "pnpm dev:renderer",
+    "beforeBuildCommand": "pnpm build:renderer",
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Switch CC",
+        "label": "main",
+        "width": 900,
+        "height": 700,
+        "minWidth": 700,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "center": true
+      },
+      {
+        "title": "Switch CC - MenuBar",
+        "label": "menubar",
+        "width": 320,
+        "height": 400,
+        "minWidth": 320,
+        "minHeight": 200,
+        "maxWidth": 400,
+        "maxHeight": 600,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false,
+        "alwaysOnTop": true,
+        "center": false,
+        "visible": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' data: blob: https://api.github.com https://github.com"
+    },
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Claude Config 供应商切换工具",
+    "longDescription": "一个专注于 Claude Code 配置管理和快速切换的桌面应用"
+  },
+  "plugins": {
+    "log": {
+      "level": "info"
+    },
+    "updater": {
+      "active": false
+    }
+  }
+}
