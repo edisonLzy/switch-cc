@@ -68,9 +68,6 @@
     "longDescription": "一个专注于 Claude Code 配置管理和快速切换的桌面应用"
   },
   "plugins": {
-    "log": {
-      "level": "info"
-    },
     "updater": {
       "active": false
     }

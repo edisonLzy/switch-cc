@@ -1,9 +1,9 @@
 use crate::config;
 use crate::provider::Provider;
-use crate::settings::{get_settings, save_settings, Settings};
+use crate::settings::{Settings};
 use crate::store::{AppMode, AppState};
 use std::collections::HashMap;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, Emitter};
 
 #[tauri::command]
 pub async fn get_providers(
@@ -215,12 +215,18 @@ pub async fn open_config_folder() -> Result<(), String> {
 #[tauri::command]
 pub async fn pick_directory(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
+    use tokio::sync::oneshot;
     
-    let path = app.dialog().file().pick_folder();
+    let (tx, rx) = oneshot::channel();
     
-    match path {
-        Some(path) => Ok(Some(path.to_string_lossy().to_string())),
-        None => Ok(None),
+    app.dialog().file().pick_folder(move |path| {
+        let result = path.map(|p| p.to_string());
+        let _ = tx.send(result);
+    });
+    
+    match rx.await {
+        Ok(result) => Ok(result),
+        Err(_) => Err("Failed to get directory selection result".to_string()),
     }
 }
 
@@ -273,12 +279,12 @@ pub async fn open_app_config_folder() -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_settings() -> Result<Settings, String> {
-    Ok(get_settings())
+    Ok(crate::settings::get_settings())
 }
 
 #[tauri::command]
 pub async fn save_settings(settings: Settings) -> Result<(), String> {
-    save_settings(&settings)
+    crate::settings::save_settings(&settings)
 }
 
 #[tauri::command]
@@ -346,11 +352,21 @@ pub async fn set_app_mode(
 
 #[tauri::command]
 pub async fn get_app_mode(state: State<'_, AppState>) -> Result<String, String> {
-    let mode = state.get_app_mode()?;
-    Ok(match mode {
-        AppMode::Main => "main".to_string(),
-        AppMode::MenuBar => "menubar".to_string(),
-    })
+    println!("=== get_app_mode called ===");
+    match state.get_app_mode() {
+        Ok(mode) => {
+            let mode_str = match mode {
+                AppMode::Main => "main".to_string(),
+                AppMode::MenuBar => "menubar".to_string(),
+            };
+            println!("返回应用模式: {}", mode_str);
+            Ok(mode_str)
+        },
+        Err(e) => {
+            println!("get_app_mode 错误: {}", e);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]

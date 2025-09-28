@@ -4,9 +4,12 @@ use serde::{Deserialize, Serialize};
 pub struct Provider {
     pub id: String,
     pub name: String,
+    #[serde(rename = "settingsConfig")]
     pub settings_config: serde_json::Value, // Claude settings.json 配置对象
+    #[serde(rename = "websiteUrl")]
     pub website_url: Option<String>,
     pub category: Option<String>, // 供应商分类
+    #[serde(rename = "createdAt")]
     pub created_at: Option<u64>, // 创建时间戳（毫秒）
 }
 

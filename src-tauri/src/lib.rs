@@ -9,7 +9,7 @@ use store::AppState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, RunEvent,
+    Manager, RunEvent, Emitter,
 };
 
 /// 创建动态托盘菜单
