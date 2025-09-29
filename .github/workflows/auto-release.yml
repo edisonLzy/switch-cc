@@ -136,44 +136,32 @@ jobs:
           targets: ${{ matrix.target }}
 
       # Linux系统依赖
-      - name: Install GTK and related libraries
+      - name: Install Linux system deps
         if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
+          # Core build tools and pkg-config
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
+            pkg-config \
             curl \
             wget \
             file \
-            libssl-dev \
-            pkg-config \
-            libglib2.0-dev \
-            libgobject-introspection1.0-dev \
-            libgirepository1.0-dev \
-            libgdk-pixbuf-2.0-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-
-      - name: Set comprehensive PKG_CONFIG_PATH
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig" >> $GITHUB_ENV
-          
-      - name: Verify pkg-config setup
-        if: matrix.platform == 'ubuntu-22.04'
-        env:
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
-        run: |
-          echo "🔍 Verifying pkg-config libraries..."
-          pkg-config --exists glib-2.0 && echo "✅ glib-2.0 found" || echo "❌ glib-2.0 missing"
-          pkg-config --exists gobject-2.0 && echo "✅ gobject-2.0 found" || echo "❌ gobject-2.0 missing"
-          pkg-config --exists gio-2.0 && echo "✅ gio-2.0 found" || echo "❌ gio-2.0 missing"
-          pkg-config --exists gtk+-3.0 && echo "✅ gtk+-3.0 found" || echo "❌ gtk+-3.0 missing"
-          echo "📋 PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+            patchelf \
+            libssl-dev
+          # GTK/GLib stack for gdk-3.0, glib-2.0, gio-2.0
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev
+          # WebKit2GTK (version differs across Ubuntu images; try 4.1 then 4.0)
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
+            || sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev
+          # libsoup also changed major version; prefer 3.0 with fallback to 2.4
+          sudo apt-get install -y --no-install-recommends libsoup-3.0-dev \
+            || sudo apt-get install -y --no-install-recommends libsoup2.4-dev
 
       # 构建前端
       - name: Build frontend
@@ -184,8 +172,6 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Linux PKG_CONFIG_PATH for Tauri build
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
         with:
           tagName: v${{ needs.check-version.outputs.new-version }}
           releaseName: 'Switch CC v${{ needs.check-version.outputs.new-version }}'
