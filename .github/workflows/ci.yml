@@ -115,6 +115,8 @@ jobs:
           
       - name: Verify pkg-config setup
         if: matrix.platform == 'ubuntu-latest'
+        env:
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
         run: |
           echo "🔍 Verifying pkg-config libraries..."
           pkg-config --exists glib-2.0 && echo "✅ glib-2.0 found" || echo "❌ glib-2.0 missing"
@@ -129,6 +131,8 @@ jobs:
 
       # Rust编译检查  
       - name: Rust build check
+        env:
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
         run: cargo build --manifest-path=src-tauri/Cargo.toml
 
       # 运行Rust测试（如果有）

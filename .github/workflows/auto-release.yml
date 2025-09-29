@@ -165,6 +165,8 @@ jobs:
           
       - name: Verify pkg-config setup
         if: matrix.platform == 'ubuntu-22.04'
+        env:
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
         run: |
           echo "🔍 Verifying pkg-config libraries..."
           pkg-config --exists glib-2.0 && echo "✅ glib-2.0 found" || echo "❌ glib-2.0 missing"
@@ -182,6 +184,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Linux PKG_CONFIG_PATH for Tauri build
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig
         with:
           tagName: v${{ needs.check-version.outputs.new-version }}
           releaseName: 'Switch CC v${{ needs.check-version.outputs.new-version }}'
