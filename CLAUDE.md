@@ -63,7 +63,10 @@ Mode switching is handled by the `AppMode` enum in Rust and controlled via Tauri
 
 ### Configuration Management
 
-- **App Config**: `~/.switch-cc/config.json` - stores providers and current selection
+- **App Config**: Platform-specific config directory + `/switch-cc/config.json` - stores providers and current selection
+  - **macOS**: `~/Library/Application Support/switch-cc/config.json`
+  - **Windows**: `%APPDATA%\switch-cc\config.json`
+  - **Linux**: `~/.config/switch-cc/config.json`
 - **Target Config**: `~/.claude/settings.json` - Claude Code configuration that gets modified
 - **Atomic Writes**: All config operations use atomic write patterns to prevent corruption
 
