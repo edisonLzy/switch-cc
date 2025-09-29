@@ -74,10 +74,14 @@ impl MenuBarManager {
         #[cfg(target_os = "windows")]
         {
             // Windows: 在屏幕右上角显示
-            let screen_size = window.current_monitor()
-                .map_err(|e| format!("获取屏幕信息失败: {}", e))?
-                .and_then(|monitor| monitor.size().ok())
-                .unwrap_or(tauri::Size::Physical(tauri::PhysicalSize { width: 1920, height: 1080 }));
+            let monitor = window.current_monitor()
+                .map_err(|e| format!("获取屏幕信息失败: {}", e))?;
+
+            let screen_size = if let Some(monitor) = monitor {
+                *monitor.size()
+            } else {
+                PhysicalSize { width: 1920u32, height: 1080u32 }
+            };
 
             let window_size = window.outer_size()
                 .map_err(|e| format!("获取窗口大小失败: {}", e))?;
@@ -85,16 +89,20 @@ impl MenuBarManager {
             let x = screen_size.width as i32 - window_size.width as i32 - 20;
             let y = 50;
 
-            let _ = window.set_position(Position::Physical(tauri::PhysicalPosition { x, y }));
+            let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
         }
 
         #[cfg(target_os = "linux")]
         {
             // Linux: 在屏幕右上角显示
-            let screen_size = window.current_monitor()
-                .map_err(|e| format!("获取屏幕信息失败: {}", e))?
-                .and_then(|monitor| monitor.size().ok())
-                .unwrap_or(tauri::Size::Physical(tauri::PhysicalSize { width: 1920, height: 1080 }));
+            let monitor = window.current_monitor()
+                .map_err(|e| format!("获取屏幕信息失败: {}", e))?;
+
+            let screen_size = if let Some(monitor) = monitor {
+                *monitor.size()
+            } else {
+                PhysicalSize { width: 1920u32, height: 1080u32 }
+            };
 
             let window_size = window.outer_size()
                 .map_err(|e| format!("获取窗口大小失败: {}", e))?;
@@ -102,7 +110,7 @@ impl MenuBarManager {
             let x = screen_size.width as i32 - window_size.width as i32 - 20;
             let y = 50;
 
-            let _ = window.set_position(Position::Physical(tauri::PhysicalPosition { x, y }));
+            let _ = window.set_position(Position::Physical(PhysicalPosition { x, y }));
         }
 
         Ok(())

@@ -9,8 +9,11 @@ use store::AppState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, RunEvent, Emitter,
+    Manager, Emitter,
 };
+
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
 
 /// 创建动态托盘菜单
 pub fn create_tray_menu(app: &tauri::AppHandle, app_state: &AppState) -> Result<Menu<tauri::Wry>, String> {
