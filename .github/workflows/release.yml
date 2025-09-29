@@ -114,13 +114,26 @@ jobs:
             libssl-dev \
             pkg-config \
             libglib2.0-dev \
+            libgobject-introspection1.0-dev \
+            libgirepository1.0-dev \
             libgdk-pixbuf-2.0-dev \
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      - name: Set PKG_CONFIG_PATH
+      - name: Set comprehensive PKG_CONFIG_PATH
         if: matrix.platform == 'ubuntu-22.04'
-        run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+        run: |
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/lib/pkgconfig" >> $GITHUB_ENV
+          
+      - name: Verify pkg-config setup
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          echo "🔍 Verifying pkg-config libraries..."
+          pkg-config --exists glib-2.0 && echo "✅ glib-2.0 found" || echo "❌ glib-2.0 missing"
+          pkg-config --exists gobject-2.0 && echo "✅ gobject-2.0 found" || echo "❌ gobject-2.0 missing"
+          pkg-config --exists gio-2.0 && echo "✅ gio-2.0 found" || echo "❌ gio-2.0 missing"
+          pkg-config --exists gtk+-3.0 && echo "✅ gtk+-3.0 found" || echo "❌ gtk+-3.0 missing"
+          echo "📋 PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
 
       # macOS专用：安装Apple Developer证书（如果需要代码签名）
       - name: Setup macOS keychain
