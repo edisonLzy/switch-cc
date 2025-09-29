@@ -190,55 +190,6 @@ jobs:
             echo "No .app found to zip (optional)" >&2
           fi
 
-      - name: Prepare Windows Assets
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
-          # 仅打包 MSI 安装器 + .sig（用于 Updater）
-          $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle/msi' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -eq $msi) {
-            # 兜底：全局搜索 .msi
-            $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-          }
-          if ($null -ne $msi) {
-            $dest = 'CC-Switch-Setup.msi'
-            Copy-Item $msi.FullName (Join-Path release-assets $dest)
-            Write-Host "Installer copied: $dest"
-            $sigPath = "$($msi.FullName).sig"
-            if (Test-Path $sigPath) {
-              Copy-Item $sigPath (Join-Path release-assets ("$dest.sig"))
-              Write-Host "Signature copied: $dest.sig"
-            } else {
-              Write-Warning "Signature not found for $($msi.Name)"
-            }
-          } else {
-            Write-Warning 'No Windows MSI installer found'
-          }
-          # 绿色版（portable）：仅可执行文件打 zip（不参与 Updater）
-          $exeCandidates = @(
-            'src-tauri/target/release/cc-switch.exe',
-            'src-tauri/target/x86_64-pc-windows-msvc/release/cc-switch.exe'
-          )
-          $exePath = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if ($null -ne $exePath) {
-            $portableDir = 'release-assets/CC-Switch-Portable'
-            New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-            Copy-Item $exePath $portableDir
-            $portableIniPath = Join-Path $portableDir 'portable.ini'
-            $portableContent = @(
-              '# CC Switch portable build marker',
-              'portable=true'
-            )
-            $portableContent | Set-Content -Path $portableIniPath -Encoding UTF8
-            Compress-Archive -Path "$portableDir/*" -DestinationPath 'release-assets/CC-Switch-Windows-Portable.zip' -Force
-            Remove-Item -Recurse -Force $portableDir
-            Write-Host 'Windows portable zip created'
-          } else {
-            Write-Warning 'Portable exe not found'
-          }
-
       - name: Prepare Linux Assets
         if: runner.os == 'Linux'
         shell: bash
@@ -288,9 +239,9 @@ jobs:
 
             ### 下载
 
-            - macOS: `CC-Switch-macOS.zip`（解压即用）
-            - Windows: `CC-Switch-Setup.msi`（安装版）；`CC-Switch-Windows-Portable.zip`（绿色版）
-            - Linux: `*.deb`（Debian/Ubuntu 安装包）
+            - **macOS**: `CC-Switch-macOS.zip`（解压即用）
+            - **Windows**: 由 Tauri Action 自动生成的 MSI 安装包
+            - **Linux**: `*.deb` 和 `*.AppImage`（Debian/Ubuntu 安装包和便携版）
 
             ---
             提示：macOS 如遇"已损坏"提示，可在终端执行：`xattr -cr "/Applications/Switch CC.app"`
