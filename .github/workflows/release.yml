@@ -112,9 +112,11 @@ jobs:
             wget \
             file \
             libssl-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
+            pkg-config \
+            libglib2.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
       # macOS专用：安装Apple Developer证书（如果需要代码签名）
       - name: Setup macOS keychain

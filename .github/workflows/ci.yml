@@ -99,7 +99,12 @@ jobs:
             curl \
             wget \
             file \
-            libssl-dev
+            libssl-dev \
+            pkg-config \
+            libglib2.0-dev \
+            libgdk-pixbuf-2.0-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
       # 构建前端
       - name: Build frontend
