@@ -25,3 +25,8 @@ dist-ssr
 
 # Tauri
 src-tauri/target
+
+# Tauri 签名密钥（私钥必须保密）
+tauri_signing_key.key
+*.key
+!*.key.pub
