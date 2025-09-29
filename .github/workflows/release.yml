@@ -18,7 +18,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: windows-2022
           - os: ubuntu-22.04
           - os: macos-14
 
@@ -98,7 +97,7 @@ jobs:
           fi
           
           RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
-          # 目标：提供正确的私钥"文件路径"给 Tauri CLI，避免内容解码歧义
+          # 目标：提供正确的私钥“文件路径”给 Tauri CLI，避免内容解码歧义
           KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
           # 情况 1：原始两行文本（第一行以 "untrusted comment:" 开头）
           if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
@@ -123,7 +122,7 @@ jobs:
               fi
             fi
           fi
-          # 将"完整两行内容"作为环境变量注入（Tauri 支持传入完整私钥文本或文件路径）
+          # 将“完整两行内容”作为环境变量注入（Tauri 支持传入完整私钥文本或文件路径）
           # 使用多行写入语法，保持换行以便解析
           # 将完整两行私钥内容进行 base64 编码，作为单行内容注入环境变量
           if command -v base64 >/dev/null 2>&1; then
@@ -146,10 +145,6 @@ jobs:
       - name: Build Tauri App (macOS)
         if: runner.os == 'macOS'
         run: pnpm tauri build --target universal-apple-darwin
-
-      - name: Build Tauri App (Windows)
-        if: runner.os == 'Windows'
-        run: pnpm tauri build
 
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
@@ -230,21 +225,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Switch CC ${{ github.ref_name }}
+          name: CC Switch ${{ github.ref_name }}
           prerelease: true
           body: |
-            ## Switch CC ${{ github.ref_name }}
+            ## CC Switch ${{ github.ref_name }}
 
             Claude Code 供应商切换工具
 
             ### 下载
 
-            - **macOS**: `CC-Switch-macOS.zip`（解压即用）
-            - **Windows**: 由 Tauri Action 自动生成的 MSI 安装包
-            - **Linux**: `*.deb` 和 `*.AppImage`（Debian/Ubuntu 安装包和便携版）
+            - macOS: `CC-Switch-macOS.zip`（解压即用）
+            - Linux: `*.deb`（Debian/Ubuntu 安装包）
 
             ---
-            提示：macOS 如遇"已损坏"提示，可在终端执行：`xattr -cr "/Applications/Switch CC.app"`
+            提示：macOS 如遇“已损坏”提示，可在终端执行：`xattr -cr "/Applications/CC Switch.app"`
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -288,7 +282,6 @@ jobs:
           base_url="https://github.com/$REPO/releases/download/$TAG"
           # 初始化空平台映射
           mac_url=""; mac_sig=""
-          win_url=""; win_sig=""
           linux_url=""; linux_sig=""
           shopt -s nullglob
           for sig in dl/*.sig; do
@@ -302,8 +295,6 @@ jobs:
                 mac_url="$url"; mac_sig="$sig_content";;
               *.AppImage|*.appimage)
                 linux_url="$url"; linux_sig="$sig_content";;
-              *.msi|*.exe)
-                win_url="$url"; win_sig="$sig_content";;
             esac
           done
           # 构造 JSON（仅包含存在的目标）
@@ -322,11 +313,6 @@ jobs:
                 echo "    \"$key\": {\"signature\": \"$mac_sig\", \"url\": \"$mac_url\"}"
                 first=0
               done
-            fi
-            if [ -n "$win_url" ] && [ -n "$win_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"windows-x86_64\": {\"signature\": \"$win_sig\", \"url\": \"$win_url\"}"
-              first=0
             fi
             if [ -n "$linux_url" ] && [ -n "$linux_sig" ]; then
               [ $first -eq 0 ] && echo ','
