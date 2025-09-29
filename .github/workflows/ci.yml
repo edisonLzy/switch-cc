@@ -99,7 +99,9 @@ jobs:
             curl \
             wget \
             file \
-            libssl-dev
+            libssl-dev \
+            libglib2.0-dev \
+            pkg-config
 
       # 构建前端
       - name: Build frontend
