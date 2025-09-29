@@ -98,7 +98,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       # Linux专用：安装系统依赖
-      - name: Install Linux dependencies
+      - name: Install GTK and related libraries
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
@@ -117,6 +117,10 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
+
+      - name: Set PKG_CONFIG_PATH
+        if: matrix.platform == 'ubuntu-22.04'
+        run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       # macOS专用：安装Apple Developer证书（如果需要代码签名）
       - name: Setup macOS keychain

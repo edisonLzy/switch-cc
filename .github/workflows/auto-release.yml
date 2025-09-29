@@ -9,6 +9,9 @@ on:
       - '.github/**'
       - '.gitignore'
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -133,7 +136,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       # Linux系统依赖
-      - name: Install Linux dependencies
+      - name: Install GTK and related libraries
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
@@ -146,7 +149,13 @@ jobs:
             curl \
             wget \
             file \
-            libssl-dev
+            libssl-dev \
+            libglib2.0-dev \
+            pkg-config
+
+      - name: Set PKG_CONFIG_PATH
+        if: matrix.platform == 'ubuntu-22.04'
+        run: echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
 
       # 构建前端
       - name: Build frontend
