@@ -2,7 +2,7 @@
 
 declare global {
   interface Window {
-    api: import('./lib/tauri-api').TauriAPI;
+    api: import("./lib/tauri-api").TauriAPI;
   }
 }
 

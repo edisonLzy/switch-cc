@@ -32,7 +32,7 @@ export const buttonStyles = {
     focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2
     disabled:opacity-50 disabled:cursor-not-disabled
     dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-gray-800
-  `
+  `,
 };
 
 // 输入框样式
@@ -50,7 +50,7 @@ export const inputStyles = {
     disabled:bg-gray-100 disabled:cursor-not-allowed
     dark:bg-gray-800 dark:border-red-600 dark:text-gray-200
     dark:focus:ring-red-400 dark:disabled:bg-gray-700
-  `
+  `,
 };
 
 // 卡片样式
@@ -63,7 +63,7 @@ export const cardStyles = {
     bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700
     shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer
     hover:border-blue-300 dark:hover:border-blue-600
-  `
+  `,
 };
 
 // 模态框样式
@@ -76,5 +76,5 @@ export const modalStyles = {
     bg-white dark:bg-gray-900 rounded-xl shadow-2xl
     border border-gray-200 dark:border-gray-700
     max-w-md w-full max-h-[90vh] overflow-y-auto
-  `
+  `,
 };

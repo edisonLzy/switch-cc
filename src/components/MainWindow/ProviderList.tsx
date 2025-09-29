@@ -1,11 +1,11 @@
-import { Provider } from '../../types';
-import { Trash2, Edit, Play, ExternalLink, Search } from 'lucide-react';
-import { formatTimestamp } from '../../utils/errorUtils';
-import { Button } from '../ui/button';
-import { Card, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { Input } from '../ui/input';
-import { useState, useMemo } from 'react';
+import { Provider } from "../../types";
+import { Trash2, Edit, Play, ExternalLink, Search } from "lucide-react";
+import { formatTimestamp } from "../../utils/errorUtils";
+import { Button } from "../ui/button";
+import { Card, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { Input } from "../ui/input";
+import { useState, useMemo } from "react";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -13,7 +13,7 @@ interface ProviderListProps {
   onSwitch: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
-  onNotify: (message: string, type: 'success' | 'error') => void;
+  onNotify: (message: string, type: "success" | "error") => void;
 }
 
 function ProviderList({
@@ -23,18 +23,18 @@ function ProviderList({
   onDelete,
   onEdit,
 }: ProviderListProps) {
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
   const providerList = Object.values(providers);
-  
+
   // 过滤供应商列表
   const filteredProviders = useMemo(() => {
     if (!searchTerm.trim()) {
       return providerList;
     }
-    
+
     const term = searchTerm.toLowerCase();
-    return providerList.filter(provider => 
-      provider.name.toLowerCase().includes(term)
+    return providerList.filter((provider) =>
+      provider.name.toLowerCase().includes(term),
     );
   }, [providerList, searchTerm]);
 
@@ -59,7 +59,10 @@ function ProviderList({
       {/* 搜索栏 */}
       <div className="flex items-center gap-4">
         <div className="relative flex-1">
-          <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground/50" />
+          <Search
+            size={18}
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground/50"
+          />
           <Input
             type="text"
             placeholder="搜索供应商..."
@@ -89,92 +92,90 @@ function ProviderList({
       ) : (
         <div className="grid gap-6">
           {filteredProviders.map((provider) => (
-          <Card
-            key={provider.id}
-            className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
-              provider.id === currentProviderId
-                ? 'ring-4 ring-main'
-                : 'hover:ring-2 hover:ring-border'
-            }`}
-          >
-            <CardHeader className="p-4">
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
-                    <CardTitle className="truncate text-lg">
-                      {provider.name}
-                    </CardTitle>
-                    {provider.id === currentProviderId && (
-                      <Badge variant="default">
-                        当前使用
-                      </Badge>
-                    )}
+            <Card
+              key={provider.id}
+              className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
+                provider.id === currentProviderId
+                  ? "ring-4 ring-main"
+                  : "hover:ring-2 hover:ring-border"
+              }`}
+            >
+              <CardHeader className="p-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-2">
+                      <CardTitle className="truncate text-lg">
+                        {provider.name}
+                      </CardTitle>
+                      {provider.id === currentProviderId && (
+                        <Badge variant="default">当前使用</Badge>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4 text-sm">
+                      {provider.websiteUrl && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.api?.openExternal(provider.websiteUrl!);
+                          }}
+                          className="p-0 h-auto text-sm text-blue-600 hover:text-blue-800"
+                        >
+                          <ExternalLink size={14} />
+                          访问官网
+                        </Button>
+                      )}
+
+                      {provider.createdAt && (
+                        <span className="text-foreground/60">
+                          创建于 {formatTimestamp(provider.createdAt)}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-4 text-sm">
-                    {provider.websiteUrl && (
+                  <div className="flex items-center gap-2 ml-4">
+                    {provider.id !== currentProviderId && (
                       <Button
-                        variant="ghost"
-                        size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          window.api?.openExternal(provider.websiteUrl!);
+                          onSwitch(provider.id);
                         }}
-                        className="p-0 h-auto text-sm text-blue-600 hover:text-blue-800"
+                        size="sm"
                       >
-                        <ExternalLink size={14} />
-                        访问官网
+                        切换
                       </Button>
                     )}
 
-                    {provider.createdAt && (
-                      <span className="text-foreground/60">
-                        创建于 {formatTimestamp(provider.createdAt)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 ml-4">
-                  {provider.id !== currentProviderId && (
                     <Button
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSwitch(provider.id);
+                        onEdit(provider.id);
                       }}
-                      size="sm"
+                      variant="neutral"
+                      size="icon"
+                      title="编辑"
                     >
-                      切换
+                      <Edit size={16} />
                     </Button>
-                  )}
-                  
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(provider.id);
-                    }}
-                    variant="neutral"
-                    size="icon"
-                    title="编辑"
-                  >
-                    <Edit size={16} />
-                  </Button>
-                  
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(provider.id);
-                    }}
-                    variant="destructive"
-                    size="icon"
-                    title="删除"
-                  >
-                    <Trash2 size={16} />
-                  </Button>
+
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDelete(provider.id);
+                      }}
+                      variant="destructive"
+                      size="icon"
+                      title="删除"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-          </Card>
+              </CardHeader>
+            </Card>
           ))}
         </div>
       )}

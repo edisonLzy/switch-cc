@@ -24,4 +24,4 @@ export interface Settings {
 }
 
 // MenuBar 模式类型
-export type AppMode = 'main' | 'menubar';
+export type AppMode = "main" | "menubar";

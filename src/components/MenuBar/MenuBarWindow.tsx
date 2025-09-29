@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
-import { Provider } from '../../types';
-import { Settings, Monitor, Check, ChevronRight } from 'lucide-react';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { api } from '../../lib/tauri-api';
+import { useState, useEffect } from "react";
+import { Provider } from "../../types";
+import { Settings, Monitor, Check, ChevronRight } from "lucide-react";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { api } from "../../lib/tauri-api";
 
 function MenuBarWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
-  const [currentProviderId, setCurrentProviderId] = useState<string>('');
+  const [currentProviderId, setCurrentProviderId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function MenuBarWindow() {
       setProviders(loadedProviders);
       setCurrentProviderId(currentId);
     } catch (error) {
-      console.error('加载供应商列表失败:', error);
+      console.error("加载供应商列表失败:", error);
     } finally {
       setIsLoading(false);
     }
@@ -37,7 +37,7 @@ function MenuBarWindow() {
         await loadProviders();
       });
     } catch (error) {
-      console.error('设置事件监听器失败:', error);
+      console.error("设置事件监听器失败:", error);
     }
   };
 
@@ -54,25 +54,25 @@ function MenuBarWindow() {
         }, 500);
       }
     } catch (error) {
-      console.error('切换供应商失败:', error);
+      console.error("切换供应商失败:", error);
     }
   };
 
   const switchToMainWindow = async () => {
     try {
-      await api.setAppMode('main');
+      await api.setAppMode("main");
     } catch (error) {
-      console.error('切换到主界面失败:', error);
+      console.error("切换到主界面失败:", error);
     }
   };
 
   const openSettings = async () => {
     try {
       // 在MenuBar模式下，设置需要切换到主界面
-      await api.setAppMode('main');
+      await api.setAppMode("main");
       // 这里可以发送事件通知主界面打开设置
     } catch (error) {
-      console.error('打开设置失败:', error);
+      console.error("打开设置失败:", error);
     }
   };
 
@@ -111,7 +111,7 @@ function MenuBarWindow() {
             </Button>
             <Button
               onClick={switchToMainWindow}
-              variant="neutral" 
+              variant="neutral"
               size="icon"
               className="h-7 w-7"
               title="打开主界面"
@@ -150,13 +150,8 @@ function MenuBarWindow() {
             <div className="text-foreground/40 mb-2">
               <Settings size={32} className="mx-auto" />
             </div>
-            <p className="text-sm text-foreground/60 mb-4">
-              还没有配置供应商
-            </p>
-            <Button
-              onClick={switchToMainWindow}
-              size="sm"
-            >
+            <p className="text-sm text-foreground/60 mb-4">还没有配置供应商</p>
+            <Button onClick={switchToMainWindow} size="sm">
               去添加供应商
             </Button>
           </div>
@@ -168,7 +163,9 @@ function MenuBarWindow() {
                 onClick={() => handleSwitchProvider(provider.id)}
                 variant="ghost"
                 className={`w-full px-4 py-3 h-auto justify-start hover:bg-secondary-background hover:shadow-shadow hover:border-border rounded-none border-2 border-transparent group transition-all duration-200 ${
-                  provider.id === currentProviderId ? 'bg-main/20 border-main' : ''
+                  provider.id === currentProviderId
+                    ? "bg-main/20 border-main"
+                    : ""
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
@@ -179,17 +176,22 @@ function MenuBarWindow() {
                       <div className="w-4 h-4 flex-shrink-0" />
                     )}
                     <div className="min-w-0 flex-1 text-left">
-                      <p className={`text-sm font-heading truncate ${
-                        provider.id === currentProviderId 
-                          ? 'text-foreground' 
-                          : 'text-foreground'
-                      }`}>
+                      <p
+                        className={`text-sm font-heading truncate ${
+                          provider.id === currentProviderId
+                            ? "text-foreground"
+                            : "text-foreground"
+                        }`}
+                      >
                         {provider.name}
                       </p>
                     </div>
                   </div>
                   {provider.id !== currentProviderId && (
-                    <ChevronRight size={16} className="text-foreground/40 group-hover:text-foreground/60 flex-shrink-0" />
+                    <ChevronRight
+                      size={16}
+                      className="text-foreground/40 group-hover:text-foreground/60 flex-shrink-0"
+                    />
                   )}
                 </div>
               </Button>

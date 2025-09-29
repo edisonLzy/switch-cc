@@ -1,6 +1,13 @@
-import { AlertTriangle } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '../ui/dialog';
-import { Button } from '../ui/button';
+import { AlertTriangle } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -31,7 +38,7 @@ export function ConfirmDialog({
             {message}
           </DialogDescription>
         </DialogHeader>
-        
+
         <DialogFooter>
           <Button onClick={onCancel} variant="neutral">
             取消

@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Eye, Copy, Check } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
-import { api } from '../../lib/tauri-api';
+import { useState, useEffect } from "react";
+import { Eye, Copy, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
+import { api } from "../../lib/tauri-api";
 
 interface ClaudeConfigModalProps {
   isOpen: boolean;
@@ -32,8 +32,8 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
       const config = await api.getClaudeConfig();
       setConfigData(config);
     } catch (error) {
-      console.error('获取Claude配置失败:', error);
-      setConfigData({ exists: false, path: '未知路径' });
+      console.error("获取Claude配置失败:", error);
+      setConfigData({ exists: false, path: "未知路径" });
     } finally {
       setIsLoading(false);
     }
@@ -42,11 +42,13 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
   const handleCopyConfig = async () => {
     if (configData?.content) {
       try {
-        await navigator.clipboard.writeText(JSON.stringify(configData.content, null, 2));
+        await navigator.clipboard.writeText(
+          JSON.stringify(configData.content, null, 2),
+        );
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch (error) {
-        console.error('复制失败:', error);
+        console.error("复制失败:", error);
       }
     }
   };
@@ -79,7 +81,9 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-foreground/70">配置文件存在：</span>
-                    <Badge variant={configData?.exists ? "default" : "destructive"}>
+                    <Badge
+                      variant={configData?.exists ? "default" : "destructive"}
+                    >
                       {configData?.exists ? "是" : "否"}
                     </Badge>
                   </div>
@@ -137,7 +141,8 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
                     配置文件不存在
                   </h3>
                   <p className="text-foreground/60">
-                    Claude Code 配置文件未找到，请确保已正确安装并配置 Claude Code
+                    Claude Code 配置文件未找到，请确保已正确安装并配置 Claude
+                    Code
                   </p>
                 </CardContent>
               </Card>

@@ -1,14 +1,20 @@
-import { useState, useEffect } from 'react';
-import { Save, Settings as SettingsIcon } from 'lucide-react';
-import { Settings } from '../../types';
-import { api } from '../../lib/tauri-api';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Checkbox } from '../ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
-import { Badge } from '../ui/badge';
+import { useState, useEffect } from "react";
+import { Save, Settings as SettingsIcon } from "lucide-react";
+import { Settings } from "../../types";
+import { api } from "../../lib/tauri-api";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Checkbox } from "../ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Badge } from "../ui/badge";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -28,7 +34,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
       const currentSettings = await api.getSettings();
       setSettings(currentSettings);
     } catch (error) {
-      console.error('加载设置失败:', error);
+      console.error("加载设置失败:", error);
     } finally {
       setIsLoading(false);
     }
@@ -42,8 +48,8 @@ function SettingsModal({ onClose }: SettingsModalProps) {
       await api.saveSettings(settings);
       onClose();
     } catch (error) {
-      console.error('保存设置失败:', error);
-      alert('保存设置失败，请重试');
+      console.error("保存设置失败:", error);
+      alert("保存设置失败，请重试");
     } finally {
       setIsSaving(false);
     }
@@ -53,7 +59,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
     try {
       await api.checkForUpdates();
     } catch (error) {
-      console.error('检查更新失败:', error);
+      console.error("检查更新失败:", error);
     }
   };
 
@@ -106,18 +112,28 @@ function SettingsModal({ onClose }: SettingsModalProps) {
                 <Checkbox
                   id="showInTray"
                   checked={settings.showInTray}
-                  onCheckedChange={(checked) => setSettings(prev => prev ? { ...prev, showInTray: !!checked } : prev)}
+                  onCheckedChange={(checked) =>
+                    setSettings((prev) =>
+                      prev ? { ...prev, showInTray: !!checked } : prev,
+                    )
+                  }
                 />
                 <Label htmlFor="showInTray" className="text-sm">
                   在系统托盘显示图标
                 </Label>
               </div>
-              
+
               <div className="flex items-center space-x-3">
                 <Checkbox
                   id="minimizeToTray"
                   checked={settings.minimizeToTrayOnClose}
-                  onCheckedChange={(checked) => setSettings(prev => prev ? { ...prev, minimizeToTrayOnClose: !!checked } : prev)}
+                  onCheckedChange={(checked) =>
+                    setSettings((prev) =>
+                      prev
+                        ? { ...prev, minimizeToTrayOnClose: !!checked }
+                        : prev,
+                    )
+                  }
                 />
                 <Label htmlFor="minimizeToTray" className="text-sm">
                   点击关闭按钮时最小化到托盘
@@ -136,7 +152,11 @@ function SettingsModal({ onClose }: SettingsModalProps) {
                 <Checkbox
                   id="enableMenuBar"
                   checked={settings.enableMenuBar}
-                  onCheckedChange={(checked) => setSettings(prev => prev ? { ...prev, enableMenuBar: !!checked } : prev)}
+                  onCheckedChange={(checked) =>
+                    setSettings((prev) =>
+                      prev ? { ...prev, enableMenuBar: !!checked } : prev,
+                    )
+                  }
                 />
                 <Label htmlFor="enableMenuBar" className="text-sm">
                   启用 MenuBar 快捷模式
@@ -155,14 +175,21 @@ function SettingsModal({ onClose }: SettingsModalProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
-                <Label htmlFor="claudeConfigDir">
-                  Claude 配置目录（可选）
-                </Label>
+                <Label htmlFor="claudeConfigDir">Claude 配置目录（可选）</Label>
                 <Input
                   id="claudeConfigDir"
                   type="text"
-                  value={settings.claudeConfigDir || ''}
-                  onChange={(e) => setSettings(prev => prev ? { ...prev, claudeConfigDir: e.target.value || undefined } : prev)}
+                  value={settings.claudeConfigDir || ""}
+                  onChange={(e) =>
+                    setSettings((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            claudeConfigDir: e.target.value || undefined,
+                          }
+                        : prev,
+                    )
+                  }
                   placeholder="默认使用 ~/.claude"
                 />
                 <p className="text-xs text-foreground/60">
@@ -206,10 +233,10 @@ function SettingsModal({ onClose }: SettingsModalProps) {
           <Button
             onClick={handleSave}
             disabled={isSaving}
-            className={isSaving ? 'opacity-50' : ''}
+            className={isSaving ? "opacity-50" : ""}
           >
             <Save size={16} />
-            {isSaving ? '保存中...' : '保存'}
+            {isSaving ? "保存中..." : "保存"}
           </Button>
         </DialogFooter>
       </DialogContent>

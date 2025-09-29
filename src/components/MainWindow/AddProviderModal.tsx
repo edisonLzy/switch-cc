@@ -1,48 +1,54 @@
-import { useState } from 'react';
-import { Provider } from '../../types';
-import { Plus } from 'lucide-react';
-import { presetProviders, generateDefaultConfig } from '../../config/presets';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../ui/dialog';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Textarea } from '../ui/textarea';
-import { Label } from '../ui/label';
-import { Card, CardContent } from '../ui/card';
-import { Badge } from '../ui/badge';
+import { useState } from "react";
+import { Provider } from "../../types";
+import { Plus } from "lucide-react";
+import { presetProviders, generateDefaultConfig } from "../../config/presets";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "../ui/dialog";
+import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
+import { Label } from "../ui/label";
+import { Card, CardContent } from "../ui/card";
+import { Badge } from "../ui/badge";
 
 interface AddProviderModalProps {
-  onAdd: (provider: Omit<Provider, 'id'>) => void;
+  onAdd: (provider: Omit<Provider, "id">) => void;
   onClose: () => void;
 }
 
 function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
-  const [step, setStep] = useState<'preset' | 'custom'>('preset');
-  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [step, setStep] = useState<"preset" | "custom">("preset");
+  const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [formData, setFormData] = useState({
-    name: '',
-    websiteUrl: '',
-    apiKey: '',
-    baseUrl: '',
-    customConfig: '{}',
+    name: "",
+    websiteUrl: "",
+    apiKey: "",
+    baseUrl: "",
+    customConfig: "{}",
   });
 
   const handlePresetSelect = (presetIndex: number) => {
     const preset = presetProviders[presetIndex];
     setFormData({
       name: preset.name,
-      websiteUrl: preset.websiteUrl || '',
-      apiKey: '',
-      baseUrl: '',
+      websiteUrl: preset.websiteUrl || "",
+      apiKey: "",
+      baseUrl: "",
       customConfig: JSON.stringify(preset.settingsConfig, null, 2),
     });
     setSelectedPreset(presetIndex.toString());
   };
 
   const handleCustomConfig = () => {
-    setStep('custom');
-    setFormData(prev => ({
+    setStep("custom");
+    setFormData((prev) => ({
       ...prev,
-      name: '',
+      name: "",
       customConfig: JSON.stringify(generateDefaultConfig(), null, 2),
     }));
   };
@@ -52,11 +58,11 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
 
     try {
       let settingsConfig;
-      
-      if (step === 'preset' && selectedPreset) {
+
+      if (step === "preset" && selectedPreset) {
         const preset = presetProviders[parseInt(selectedPreset)];
         settingsConfig = { ...preset.settingsConfig };
-        
+
         // 如果有API Key，替换配置中的token
         if (formData.apiKey.trim()) {
           settingsConfig.env = {
@@ -69,7 +75,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
         settingsConfig = JSON.parse(formData.customConfig);
       }
 
-      const provider: Omit<Provider, 'id'> = {
+      const provider: Omit<Provider, "id"> = {
         name: formData.name.trim(),
         settingsConfig,
         websiteUrl: formData.websiteUrl.trim() || undefined,
@@ -77,7 +83,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
 
       onAdd(provider);
     } catch (error) {
-      alert('配置格式错误，请检查JSON格式');
+      alert("配置格式错误，请检查JSON格式");
     }
   };
 
@@ -88,7 +94,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
           <DialogTitle>添加供应商</DialogTitle>
         </DialogHeader>
 
-        {step === 'preset' ? (
+        {step === "preset" ? (
           // 预设选择界面
           <div className="space-y-6">
             <div>
@@ -101,8 +107,8 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                     key={index}
                     className={`cursor-pointer transition-colors p-0 ${
                       selectedPreset === index.toString()
-                        ? 'ring-4 ring-main'
-                        : 'hover:ring-2 hover:ring-border'
+                        ? "ring-4 ring-main"
+                        : "hover:ring-2 hover:ring-border"
                     }`}
                     onClick={() => handlePresetSelect(index)}
                   >
@@ -122,9 +128,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                           </h4>
                         </div>
                         {preset.websiteUrl && (
-                          <Badge variant="default">
-                            有官网
-                          </Badge>
+                          <Badge variant="default">有官网</Badge>
                         )}
                       </div>
                     </CardContent>
@@ -142,7 +146,12 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                     id="apikey"
                     type="password"
                     value={formData.apiKey}
-                    onChange={(e) => setFormData(prev => ({ ...prev, apiKey: e.target.value }))}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        apiKey: e.target.value,
+                      }))
+                    }
                     placeholder="输入您的 API Key"
                   />
                 </div>
@@ -176,42 +185,48 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">
-                  供应商名称 *
-                </Label>
+                <Label htmlFor="name">供应商名称 *</Label>
                 <Input
                   id="name"
                   type="text"
                   required
                   value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({ ...prev, name: e.target.value }))
+                  }
                   placeholder="输入供应商名称"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="website">
-                  官网地址（可选）
-                </Label>
+                <Label htmlFor="website">官网地址（可选）</Label>
                 <Input
                   id="website"
                   type="url"
                   value={formData.websiteUrl}
-                  onChange={(e) => setFormData(prev => ({ ...prev, websiteUrl: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      websiteUrl: e.target.value,
+                    }))
+                  }
                   placeholder="https://example.com"
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="config">
-                  配置 JSON *
-                </Label>
+                <Label htmlFor="config">配置 JSON *</Label>
                 <Textarea
                   id="config"
                   required
                   rows={10}
                   value={formData.customConfig}
-                  onChange={(e) => setFormData(prev => ({ ...prev, customConfig: e.target.value }))}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      customConfig: e.target.value,
+                    }))
+                  }
                   className="font-mono text-sm"
                   placeholder="输入完整的配置 JSON"
                 />
@@ -221,7 +236,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
             <DialogFooter className="flex justify-between">
               <Button
                 type="button"
-                onClick={() => setStep('preset')}
+                onClick={() => setStep("preset")}
                 variant="neutral"
               >
                 返回预设

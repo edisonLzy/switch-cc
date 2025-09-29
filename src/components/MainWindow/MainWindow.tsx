@@ -18,7 +18,9 @@ function MainWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [currentProviderId, setCurrentProviderId] = useState<string>("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(
+    null,
+  );
   const [notification, setNotification] = useState<{
     message: string;
     type: "success" | "error";
@@ -190,7 +192,11 @@ function MainWindow() {
       const success = await api.switchProvider(id);
       if (success) {
         setCurrentProviderId(id);
-        showNotification("切换成功！请重启 Claude Code 终端以生效", "success", 2000);
+        showNotification(
+          "切换成功！请重启 Claude Code 终端以生效",
+          "success",
+          2000,
+        );
         // 更新托盘菜单
         await api.updateTrayMenu();
       } else {
@@ -323,9 +329,9 @@ function MainWindow() {
       )}
 
       {isClaudeConfigOpen && (
-        <ClaudeConfigModal 
+        <ClaudeConfigModal
           isOpen={isClaudeConfigOpen}
-          onClose={() => setIsClaudeConfigOpen(false)} 
+          onClose={() => setIsClaudeConfigOpen(false)}
         />
       )}
     </div>

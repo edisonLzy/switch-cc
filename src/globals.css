@@ -4,22 +4,22 @@
 :root {
   color-scheme: light dark;
   /* Neobrutalism color variables */
-  --main: #FFFF00;
+  --main: #ffff00;
   --main-foreground: #000000;
-  --background: #FFFFFF;
+  --background: #ffffff;
   --foreground: #000000;
   --border: #000000;
-  --secondary-background: #EFEFEF;
+  --secondary-background: #efefef;
 }
 
 .dark {
   /* Dark mode colors */
-  --main: #FFFF00;
+  --main: #ffff00;
   --main-foreground: #000000;
-  --background: #1A1A1A;
-  --foreground: #FFFFFF;
-  --border: #FFFFFF;
-  --secondary-background: #2A2A2A;
+  --background: #1a1a1a;
+  --foreground: #ffffff;
+  --border: #ffffff;
+  --secondary-background: #2a2a2a;
 }
 
 body {
@@ -44,12 +44,24 @@ body {
 }
 
 /* Apply color variables */
-.bg-main { background-color: var(--main); }
-.text-main-foreground { color: var(--main-foreground); }
-.bg-background { background-color: var(--background); }
-.text-foreground { color: var(--foreground); }
-.border-border { border-color: var(--border); }
-.bg-secondary-background { background-color: var(--secondary-background); }
+.bg-main {
+  background-color: var(--main);
+}
+.text-main-foreground {
+  color: var(--main-foreground);
+}
+.bg-background {
+  background-color: var(--background);
+}
+.text-foreground {
+  color: var(--foreground);
+}
+.border-border {
+  border-color: var(--border);
+}
+.bg-secondary-background {
+  background-color: var(--secondary-background);
+}
 
 /* Update shadow to use current border color */
 .shadow-shadow {
@@ -57,23 +69,29 @@ body {
 }
 
 /* Cursor styles for better UX */
-button, [role="button"] {
+button,
+[role="button"] {
   cursor: pointer;
 }
 
-button:disabled, [role="button"][aria-disabled="true"] {
+button:disabled,
+[role="button"][aria-disabled="true"] {
   cursor: not-allowed;
 }
 
-a, [role="link"] {
+a,
+[role="link"] {
   cursor: pointer;
 }
 
-input, textarea, select {
+input,
+textarea,
+select {
   cursor: text;
 }
 
-input[type="checkbox"], input[type="radio"] {
+input[type="checkbox"],
+input[type="radio"] {
   cursor: pointer;
 }
 
@@ -102,7 +120,8 @@ input[type="checkbox"], input[type="radio"] {
 }
 
 /* Interactive elements hover states */
-button:hover:not(:disabled), [role="button"]:hover:not([aria-disabled="true"]) {
+button:hover:not(:disabled),
+[role="button"]:hover:not([aria-disabled="true"]) {
   cursor: pointer;
 }
 
@@ -135,7 +154,8 @@ button:hover:not(:disabled), [role="button"]:hover:not([aria-disabled="true"]) {
 }
 
 /* Remove transitions from buttons to keep neobrutalism snappiness */
-button, [role="button"] {
+button,
+[role="button"] {
   transition: transform 0.1s ease-in-out;
 }
 
@@ -153,9 +173,9 @@ button, [role="button"] {
 }
 
 /* Focus styles for accessibility */
-button:focus-visible, 
-input:focus-visible, 
-textarea:focus-visible, 
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
 select:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--main);
