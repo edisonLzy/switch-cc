@@ -9,6 +9,9 @@ on:
       - '.github/**'
       - '.gitignore'
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
