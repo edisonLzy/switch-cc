@@ -41,7 +41,8 @@
         "alwaysOnTop": true,
         "center": false,
         "visible": false,
-        "skipTaskbar": true
+        "skipTaskbar": true,
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -69,7 +70,12 @@
   },
   "plugins": {
     "updater": {
-      "active": false
+      "active": true,
+      "endpoints": [
+        "https://github.com/edisonLzy/switch-cc/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "pubkey": "untrusted comment: minisign public key: C93C9567DBE5977A\nRWR6l+XbZ5U8yf4lDDFjRlRvPj236R9vhmK8GGDmHgW9RyQRts9onvRC"
     }
   }
 }

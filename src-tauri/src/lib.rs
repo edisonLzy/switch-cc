@@ -240,6 +240,24 @@ pub fn run() {
 
             // 注入全局状态
             app.manage(app_state);
+
+            // 确保 MenuBar 窗口在启动时隐藏
+            if let Some(menubar_window) = app.get_webview_window("menubar") {
+                let _ = menubar_window.hide();
+
+                // 在 macOS 上设置窗口不显示在 Dock 中
+                #[cfg(target_os = "macos")]
+                {
+                    use tauri::Manager;
+                    if let Some(window) = app.get_webview_window("menubar") {
+                        // 尝试设置窗口级别和行为
+                        let _ = window.set_skip_taskbar(true);
+                    }
+                }
+
+                log::info!("MenuBar 窗口已在启动时隐藏");
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

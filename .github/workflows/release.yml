@@ -146,7 +146,7 @@ jobs:
 
       - name: Build Tauri App (macOS)
         if: runner.os == 'macOS'
-        run: pnpm tauri build --target universal-apple-darwin
+        run: pnpm tauri build --target universal-apple-darwin --bundles dmg,updater
 
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
