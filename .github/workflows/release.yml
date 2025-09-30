@@ -146,7 +146,7 @@ jobs:
 
       - name: Build Tauri App (macOS)
         if: runner.os == 'macOS'
-        run: pnpm tauri build --target universal-apple-darwin --bundles dmg,updater
+        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg,updater
 
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
@@ -158,33 +158,46 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release-assets
-          echo "Looking for updater artifact (.tar.gz) and .app for zip..."
+          echo "Looking for updater artifact (.tar.gz or .app.tar.gz) and .app for zip..."
           TAR_GZ=""; APP_PATH=""
+          
+          # 查找 updater bundle 文件（支持 .tar.gz 和 .app.tar.gz）
           for path in \
             "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
             "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/release/bundle/macos"; do
             if [ -d "$path" ]; then
-              [ -z "$TAR_GZ" ] && TAR_GZ=$(find "$path" -maxdepth 1 -name "*.tar.gz" -type f | head -1 || true)
+              [ -z "$TAR_GZ" ] && TAR_GZ=$(find "$path" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.app.tar.gz" \) -type f | head -1 || true)
               [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
             fi
           done
+          
+          # 如果没找到 updater 文件，尝试从其他 bundle 目录查找
           if [ -z "$TAR_GZ" ]; then
-            echo "No macOS .tar.gz updater artifact found" >&2
+            echo "Searching in all bundle directories..."
+            TAR_GZ=$(find src-tauri/target -path "*/bundle/*" \( -name "*.tar.gz" -o -name "*.app.tar.gz" \) -type f | head -1 || true)
+          fi
+          
+          if [ -z "$TAR_GZ" ]; then
+            echo "❌ No macOS .tar.gz updater artifact found" >&2
+            echo "Listing all files in bundle directories for debugging:"
+            find src-tauri/target -path "*/bundle/*" -type f || true
             exit 1
           fi
+          
           cp "$TAR_GZ" release-assets/
-          [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" release-assets/ || echo ".sig for macOS not found yet"
-          echo "macOS updater artifact copied: $(basename "$TAR_GZ")"
+          [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" release-assets/ || echo "⚠️  .sig for macOS not found yet"
+          echo "✅ macOS updater artifact copied: $(basename "$TAR_GZ")"
+          
           if [ -n "$APP_PATH" ]; then
             APP_DIR=$(dirname "$APP_PATH"); APP_NAME=$(basename "$APP_PATH")
             cd "$APP_DIR"
             ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
             mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
-            echo "macOS zip ready: CC-Switch-macOS.zip"
+            echo "✅ macOS zip ready: CC-Switch-macOS.zip"
           else
-            echo "No .app found to zip (optional)" >&2
+            echo "⚠️  No .app found to zip (optional)" >&2
           fi
 
       - name: Prepare Linux Assets
@@ -292,7 +305,7 @@ jobs:
             url="$base_url/$fname"
             sig_content=$(cat "$sig")
             case "$fname" in
-              *.tar.gz)
+              *.tar.gz|*.app.tar.gz)
                 # 视为 macOS updater artifact
                 mac_url="$url"; mac_sig="$sig_content";;
               *.AppImage|*.appimage)
