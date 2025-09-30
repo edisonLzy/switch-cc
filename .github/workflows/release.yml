@@ -39,6 +39,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      
+      - name: Install minisign (macOS)
+        if: runner.os == 'macOS'
+        run: brew install minisign
 
       - name: Install Linux system deps
         if: runner.os == 'Linux'
@@ -158,46 +162,64 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release-assets
-          echo "Looking for updater artifact (.tar.gz or .app.tar.gz) and .app for zip..."
-          TAR_GZ=""; APP_PATH=""
           
-          # 查找 updater bundle 文件（支持 .tar.gz 和 .app.tar.gz）
+          echo "🔍 Looking for .app bundle..."
+          APP_PATH=""
           for path in \
             "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
             "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/release/bundle/macos"; do
             if [ -d "$path" ]; then
-              [ -z "$TAR_GZ" ] && TAR_GZ=$(find "$path" -maxdepth 1 \( -name "*.tar.gz" -o -name "*.app.tar.gz" \) -type f | head -1 || true)
               [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
             fi
           done
           
-          # 如果没找到 updater 文件，尝试从其他 bundle 目录查找
-          if [ -z "$TAR_GZ" ]; then
-            echo "Searching in all bundle directories..."
-            TAR_GZ=$(find src-tauri/target -path "*/bundle/*" \( -name "*.tar.gz" -o -name "*.app.tar.gz" \) -type f | head -1 || true)
-          fi
-          
-          if [ -z "$TAR_GZ" ]; then
-            echo "❌ No macOS .tar.gz updater artifact found" >&2
-            echo "Listing all files in bundle directories for debugging:"
-            find src-tauri/target -path "*/bundle/*" -type f || true
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ No .app bundle found" >&2
             exit 1
           fi
           
-          cp "$TAR_GZ" release-assets/
-          [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" release-assets/ || echo "⚠️  .sig for macOS not found yet"
-          echo "✅ macOS updater artifact copied: $(basename "$TAR_GZ")"
+          echo "✅ Found .app: $APP_PATH"
+          APP_DIR=$(dirname "$APP_PATH")
+          APP_NAME=$(basename "$APP_PATH")
           
-          if [ -n "$APP_PATH" ]; then
-            APP_DIR=$(dirname "$APP_PATH"); APP_NAME=$(basename "$APP_PATH")
-            cd "$APP_DIR"
-            ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
-            mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
-            echo "✅ macOS zip ready: CC-Switch-macOS.zip"
+          # 创建用户下载的 zip 文件
+          cd "$APP_DIR"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
+          mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
+          echo "✅ macOS zip ready: CC-Switch-macOS.zip"
+          
+          # 手动创建 updater 文件（tar.gz 格式，用于自动更新）
+          cd "$APP_DIR"
+          UPDATER_NAME="Switch-CC_universal.app.tar.gz"
+          tar -czf "$UPDATER_NAME" "$APP_NAME"
+          mv "$UPDATER_NAME" "$GITHUB_WORKSPACE/release-assets/"
+          echo "✅ macOS updater artifact created: $UPDATER_NAME"
+          
+          # 生成签名文件（如果有签名密钥）
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "🔐 Generating signature for updater..."
+            cd "$GITHUB_WORKSPACE/release-assets"
+            # 解码 base64 编码的私钥
+            echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 --decode > tauri_key.tmp
+            # 使用 minisign 签名（Tauri 使用 minisign）
+            if command -v minisign >/dev/null 2>&1; then
+              if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+                # 有密码的情况
+                minisign -S -m "$UPDATER_NAME" -s tauri_key.tmp -W
+              else
+                # 无密码的情况
+                minisign -S -m "$UPDATER_NAME" -s tauri_key.tmp
+              fi
+              rm tauri_key.tmp
+              echo "✅ Signature created: ${UPDATER_NAME}.sig"
+            else
+              echo "⚠️  minisign not available, skipping signature"
+              rm tauri_key.tmp
+            fi
           else
-            echo "⚠️  No .app found to zip (optional)" >&2
+            echo "⚠️  No signing key, skipping signature"
           fi
 
       - name: Prepare Linux Assets
