@@ -2,8 +2,6 @@ name: Release
 
 on:
   push:
-    branches:
-      - master
     tags:
       - 'v*'
 
@@ -24,33 +22,6 @@ jobs:
           - os: macos-14
 
     steps:
-      - name: Validate required secrets
-        shell: bash
-        run: |
-          echo "🔍 验证必需的环境变量和 secrets..."
-
-          # 检查 TAURI_SIGNING_PRIVATE_KEY
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret 为空或不存在" >&2
-            echo "请检查 GitHub 仓库 Settings > Secrets and variables > Actions" >&2
-            echo "当前触发方式: ${{ github.event_name }}" >&2
-            echo "当前分支: ${{ github.ref_name }}" >&2
-            echo "当前仓库: ${{ github.repository }}" >&2
-            exit 1
-          fi
-
-          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
-          echo "✅ TAURI_SIGNING_PRIVATE_KEY secret 已找到 (长度: ${#RAW} 字符)"
-
-          # 检查密码（可选）
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
-            echo "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret 已找到"
-          else
-            echo "⚠️  TAURI_SIGNING_PRIVATE_KEY_PASSWORD 未设置（如果私钥无密码保护则正常）"
-          fi
-
-          echo "✅ 所有必需的 secrets 验证通过"
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -66,11 +37,6 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      
-      - name: Install minisign (macOS)
-        if: runner.os == 'macOS'
-        run: brew install minisign
-
       - name: Install Linux system deps
         if: runner.os == 'Linux'
         shell: bash
@@ -97,7 +63,6 @@ jobs:
           # libsoup also changed major version; prefer 3.0 with fallback to 2.4
           sudo apt-get install -y --no-install-recommends libsoup-3.0-dev \
             || sudo apt-get install -y --no-install-recommends libsoup2.4-dev
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v2
         with:
@@ -122,8 +87,13 @@ jobs:
       - name: Prepare Tauri signing key
         shell: bash
         run: |
-          echo "🔐 准备 Tauri 签名密钥..."
-
+          # 调试：检查 Secret 是否存在
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret 为空或不存在" >&2
+            echo "请检查 GitHub 仓库 Settings > Secrets and variables > Actions" >&2
+            exit 1
+          fi
+          
           RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
           # 目标：提供正确的私钥“文件路径”给 Tauri CLI，避免内容解码歧义
           KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
@@ -169,10 +139,9 @@ jobs:
             echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> $GITHUB_ENV
           fi
           echo "✅ Tauri signing key prepared"
-
       - name: Build Tauri App (macOS)
         if: runner.os == 'macOS'
-        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg,updater
+        run: pnpm tauri build --target universal-apple-darwin
 
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
@@ -184,64 +153,34 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p release-assets
-          
-          echo "🔍 Looking for .app bundle..."
-          APP_PATH=""
+          echo "Looking for updater artifact (.tar.gz) and .app for zip..."
+          TAR_GZ=""; APP_PATH=""
           for path in \
             "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
             "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
             "src-tauri/target/release/bundle/macos"; do
             if [ -d "$path" ]; then
+              [ -z "$TAR_GZ" ] && TAR_GZ=$(find "$path" -maxdepth 1 -name "*.tar.gz" -type f | head -1 || true)
               [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
             fi
           done
-          
-          if [ -z "$APP_PATH" ]; then
-            echo "❌ No .app bundle found" >&2
+          if [ -z "$TAR_GZ" ]; then
+            echo "No macOS .tar.gz updater artifact found" >&2
             exit 1
           fi
-          
-          echo "✅ Found .app: $APP_PATH"
-          APP_DIR=$(dirname "$APP_PATH")
-          APP_NAME=$(basename "$APP_PATH")
-          
-          # 创建用户下载的 zip 文件
-          (cd "$APP_DIR" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip")
-          mv "$APP_DIR/CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
-          echo "✅ macOS zip ready: CC-Switch-macOS.zip"
-          
-          # 手动创建 updater 文件（tar.gz 格式，用于自动更新）
-          UPDATER_NAME="Switch-CC_universal.app.tar.gz"
-          (cd "$APP_DIR" && tar -czf "$UPDATER_NAME" "$APP_NAME")
-          mv "$APP_DIR/$UPDATER_NAME" "$GITHUB_WORKSPACE/release-assets/"
-          echo "✅ macOS updater artifact created: $UPDATER_NAME"
-          
-          # 生成签名文件（如果有签名密钥）
-          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
-            echo "🔐 Generating signature for updater..."
-            cd "$GITHUB_WORKSPACE/release-assets"
-            # 解码 base64 编码的私钥
-            echo "$TAURI_SIGNING_PRIVATE_KEY" | base64 --decode > tauri_key.tmp
-            # 使用 minisign 签名（Tauri 使用 minisign）
-            if command -v minisign >/dev/null 2>&1; then
-              if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
-                # 有密码的情况
-                minisign -S -m "$UPDATER_NAME" -s tauri_key.tmp -W
-              else
-                # 无密码的情况
-                minisign -S -m "$UPDATER_NAME" -s tauri_key.tmp
-              fi
-              rm tauri_key.tmp
-              echo "✅ Signature created: ${UPDATER_NAME}.sig"
-            else
-              echo "⚠️  minisign not available, skipping signature"
-              rm tauri_key.tmp
-            fi
+          cp "$TAR_GZ" release-assets/
+          [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" release-assets/ || echo ".sig for macOS not found yet"
+          echo "macOS updater artifact copied: $(basename "$TAR_GZ")"
+          if [ -n "$APP_PATH" ]; then
+            APP_DIR=$(dirname "$APP_PATH"); APP_NAME=$(basename "$APP_PATH")
+            cd "$APP_DIR"
+            ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
+            mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
+            echo "macOS zip ready: CC-Switch-macOS.zip"
           else
-            echo "⚠️  No signing key, skipping signature"
+            echo "No .app found to zip (optional)" >&2
           fi
-
       - name: Prepare Linux Assets
         if: runner.os == 'Linux'
         shell: bash
@@ -265,19 +204,16 @@ jobs:
           else
             echo "No .deb found (optional)"
           fi
-
       - name: List prepared assets
         shell: bash
         run: |
           ls -la release-assets || true
-
       - name: Collect Signatures
         shell: bash
         run: |
           set -euo pipefail
           echo "Collected signatures (if any alongside artifacts):"
           ls -la release-assets/*.sig || echo "No signatures found"
-
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
@@ -286,14 +222,10 @@ jobs:
           prerelease: true
           body: |
             ## CC Switch ${{ github.ref_name }}
-
             Claude Code 供应商切换工具
-
             ### 下载
-
             - macOS: `CC-Switch-macOS.zip`（解压即用）
             - Linux: `*.deb`（Debian/Ubuntu 安装包）
-
             ---
             提示：macOS 如遇“已损坏”提示，可在终端执行：`xattr -cr "/Applications/CC Switch.app"`
           files: release-assets/*
@@ -306,7 +238,6 @@ jobs:
         run: |
           echo "Listing bundles in src-tauri/target..."
           find src-tauri/target -maxdepth 4 -type f -name "*.*" 2>/dev/null || true
-
   assemble-latest-json:
     name: Assemble latest.json
     runs-on: ubuntu-22.04
@@ -347,7 +278,7 @@ jobs:
             url="$base_url/$fname"
             sig_content=$(cat "$sig")
             case "$fname" in
-              *.tar.gz|*.app.tar.gz)
+              *.tar.gz)
                 # 视为 macOS updater artifact
                 mac_url="$url"; mac_sig="$sig_content";;
               *.AppImage|*.appimage)
