@@ -24,6 +24,33 @@ jobs:
           - os: macos-14
 
     steps:
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          echo "🔍 验证必需的环境变量和 secrets..."
+
+          # 检查 TAURI_SIGNING_PRIVATE_KEY
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret 为空或不存在" >&2
+            echo "请检查 GitHub 仓库 Settings > Secrets and variables > Actions" >&2
+            echo "当前触发方式: ${{ github.event_name }}" >&2
+            echo "当前分支: ${{ github.ref_name }}" >&2
+            echo "当前仓库: ${{ github.repository }}" >&2
+            exit 1
+          fi
+
+          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+          echo "✅ TAURI_SIGNING_PRIVATE_KEY secret 已找到 (长度: ${#RAW} 字符)"
+
+          # 检查密码（可选）
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
+            echo "✅ TAURI_SIGNING_PRIVATE_KEY_PASSWORD secret 已找到"
+          else
+            echo "⚠️  TAURI_SIGNING_PRIVATE_KEY_PASSWORD 未设置（如果私钥无密码保护则正常）"
+          fi
+
+          echo "✅ 所有必需的 secrets 验证通过"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -95,13 +122,8 @@ jobs:
       - name: Prepare Tauri signing key
         shell: bash
         run: |
-          # 调试：检查 Secret 是否存在
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret 为空或不存在" >&2
-            echo "请检查 GitHub 仓库 Settings > Secrets and variables > Actions" >&2
-            exit 1
-          fi
-          
+          echo "🔐 准备 Tauri 签名密钥..."
+
           RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
           # 目标：提供正确的私钥“文件路径”给 Tauri CLI，避免内容解码歧义
           KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
