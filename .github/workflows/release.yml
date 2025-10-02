@@ -207,16 +207,14 @@ jobs:
           APP_NAME=$(basename "$APP_PATH")
           
           # 创建用户下载的 zip 文件
-          cd "$APP_DIR"
-          ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
-          mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
+          (cd "$APP_DIR" && ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip")
+          mv "$APP_DIR/CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
           echo "✅ macOS zip ready: CC-Switch-macOS.zip"
           
           # 手动创建 updater 文件（tar.gz 格式，用于自动更新）
-          cd "$APP_DIR"
           UPDATER_NAME="Switch-CC_universal.app.tar.gz"
-          tar -czf "$UPDATER_NAME" "$APP_NAME"
-          mv "$UPDATER_NAME" "$GITHUB_WORKSPACE/release-assets/"
+          (cd "$APP_DIR" && tar -czf "$UPDATER_NAME" "$APP_NAME")
+          mv "$APP_DIR/$UPDATER_NAME" "$GITHUB_WORKSPACE/release-assets/"
           echo "✅ macOS updater artifact created: $UPDATER_NAME"
           
           # 生成签名文件（如果有签名密钥）
