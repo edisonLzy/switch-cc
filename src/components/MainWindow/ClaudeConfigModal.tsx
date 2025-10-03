@@ -57,7 +57,7 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-2">
             <Eye size={20} />
@@ -71,7 +71,7 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
             <p>加载配置信息中...</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-6 overflow-y-auto flex-1 min-h-0">
             {/* 配置状态 */}
             <Card>
               <CardHeader>
