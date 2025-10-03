@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(act:*)",
+      "Bash(pnpm add:*)",
+      "Bash(npm install:*)",
+      "Bash(npx yaml-lint:*)"
+    ]
+  },
+  "outputStyle": "Explanatory"
+}

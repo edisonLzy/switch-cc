@@ -183,10 +183,8 @@ jobs:
           echo "构建 Tauri 后端并打包..."
           pnpm tauri build --verbose
         env:
-          # 禁用代码签名，适用于开发者分发
-          # 设置空值来禁用 Tauri 的代码签名功能
-          TAURI_PRIVATE_KEY: ""
-          TAURI_KEY_PASSWORD: ""
+          # 使用 ad-hoc 签名，适用于开发者分发
+          # 通过 tauri.conf.json 中的 signingIdentity: "-" 配置
           # 确保构建目标包含 Apple Silicon 和 Intel 架构
           TAURI_BUILD_TARGETS: "universal-apple-darwin"
 
@@ -262,19 +260,31 @@ jobs:
             - 提交信息: ${{ github.event.head_commit.message }}
             - 提交哈希: ${{ github.sha }}
 
-            **安装说明:**
+            **macOS 安装说明:**
             1. 下载 `.dmg` 文件（推荐）
             2. 双击挂载磁盘镜像
-            3. 将应用拖拽到 Applications 文件夹
-            4. 首次运行时右键选择"打开"以绕过安全警告
+            3. 将 Switch CC 应用拖拽到 Applications 文件夹
+            4. **重要**: 首次运行时请按以下步骤操作：
+               - 在 Applications 文件夹中找到 Switch CC
+               - **右键点击** Switch CC 应用
+               - 选择 **"打开"**
+               - 在安全警告对话框中点击 **"打开"**
+               - 之后可以正常双击启动
 
-            **备用格式:**
+            **如果遇到"已损坏"错误:**
+            - 该错误通常是由于 macOS Gatekeeper 的安全检查
+            - 请严格按照上述右键"打开"的方式首次启动
+            - 首次成功运行后，后续可正常双击启动
+
+            **备用安装方式:**
             - 如果 `.dmg` 文件无法使用，可下载 `.app.tar.gz` 压缩包
             - 解压后将 `.app` 文件拖拽到 Applications 文件夹
+            - 同样需要右键"打开"进行首次启动
 
-            **注意事项:**
-            - 这是未签名的开发者版本，首次运行会有安全警告
-            - 适用于开发者和测试用户使用
+            **技术说明:**
+            - 此版本使用 ad-hoc 签名，符合 macOS 安全要求
+            - 不会显示"已损坏"错误，但需要手动确认首次运行
+            - 适用于开发者分发和测试使用
           # 标记为预发布版本
           prerelease: false
           # 上传构建产物

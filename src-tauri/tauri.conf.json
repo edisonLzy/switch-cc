@@ -66,7 +66,12 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Claude Config 供应商切换工具",
-    "longDescription": "一个专注于 Claude Code 配置管理和快速切换的桌面应用"
+    "longDescription": "一个专注于 Claude Code 配置管理和快速切换的桌面应用",
+    "macOS": {
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "10.15"
+    }
   },
   "plugins": {
     "updater": {

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 允许应用程序访问用户选择的文件 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- 允许应用程序使用网络连接（用于更新检查和GitHub API） -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- 允许应用程序访问用户主目录下的 .claude 文件夹 -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- 允许应用程序在后台运行（系统托盘功能） -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>com.edison.switch-cc</string>
+    </array>
+
+    <!-- 允许应用程序与其他应用程序通信 -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- 允许应用程序访问用户目录（读取 Claude 配置文件） -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- 禁用库验证以支持动态链接 -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- 允许应用程序创建可执行文件的内存映射 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+</dict>
+</plist>
