@@ -9,6 +9,10 @@ on:
   # 支持手动触发，方便开发者按需构建
   workflow_dispatch:
 
+# 权限配置 - 允许工作流进行必要的操作
+permissions:
+  contents: write    # 允许创建 releases 和推送到仓库
+
 # 环境变量配置
 env:
   # 启用彩色输出，便于查看构建日志
@@ -222,11 +226,22 @@ jobs:
       - name: Commit version bump
         run: |
           echo "提交版本更新到仓库..."
+          # 配置 Git 用户信息
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+
+          # 配置 Git 认证 - 使用 GITHUB_TOKEN
+          git config --local url."https://oauth2:${GITHUB_TOKEN}@github.com".insteadOf "https://github.com"
+
+          # 添加和提交更改
           git add package.json src-tauri/tauri.conf.json
           git commit -m "chore(release): bump version to ${{ steps.version_bump.outputs.new_version }} [skip ci]" || echo "No changes to commit"
-          git push || echo "Nothing to push"
+
+          # 推送到远程仓库
+          git push origin HEAD:master || echo "Nothing to push"
+        env:
+          # 使用 GitHub Token 进行认证
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 14. 创建 GitHub Release
       # 自动创建 Release 并上传构建产物
