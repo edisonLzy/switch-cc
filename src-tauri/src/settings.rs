@@ -53,16 +53,14 @@ pub fn save_settings(settings: &Settings) -> Result<(), String> {
     // 确保父目录存在
     if let Some(parent) = settings_path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("创建设置目录失败: {}", e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("创建设置目录失败: {}", e))?;
         }
     }
 
-    let content = serde_json::to_string_pretty(settings)
-        .map_err(|e| format!("序列化设置失败: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(settings).map_err(|e| format!("序列化设置失败: {}", e))?;
 
-    fs::write(&settings_path, content)
-        .map_err(|e| format!("写入设置文件失败: {}", e))?;
+    fs::write(&settings_path, content).map_err(|e| format!("写入设置文件失败: {}", e))?;
 
     Ok(())
 }

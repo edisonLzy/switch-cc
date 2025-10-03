@@ -1,4 +1,4 @@
-use tauri::{AppHandle, Manager, Position, PhysicalPosition, PhysicalSize};
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Position};
 
 /// MenuBar 窗口管理
 pub struct MenuBarManager {
@@ -15,10 +15,10 @@ impl MenuBarManager {
         if let Some(window) = self.app.get_webview_window("menubar") {
             // 设置窗口位置（例如在屏幕右上角）
             let _ = self.position_menubar_window(&window);
-            
+
             let _ = window.show();
             let _ = window.set_focus();
-            
+
             log::info!("MenuBar 窗口已显示");
         } else {
             log::warn!("MenuBar 窗口不存在");
@@ -53,16 +53,21 @@ impl MenuBarManager {
         #[cfg(target_os = "macos")]
         {
             // macOS: 在屏幕顶部菜单栏下方居中显示
-            let monitor = window.current_monitor()
+            let monitor = window
+                .current_monitor()
                 .map_err(|e| format!("获取屏幕信息失败: {}", e))?;
-                
+
             let screen_size = if let Some(monitor) = monitor {
                 *monitor.size()
             } else {
-                PhysicalSize { width: 1920u32, height: 1080u32 }
+                PhysicalSize {
+                    width: 1920u32,
+                    height: 1080u32,
+                }
             };
 
-            let window_size = window.outer_size()
+            let window_size = window
+                .outer_size()
                 .map_err(|e| format!("获取窗口大小失败: {}", e))?;
 
             let x = (screen_size.width as i32 - window_size.width as i32) / 2;
@@ -74,16 +79,21 @@ impl MenuBarManager {
         #[cfg(target_os = "windows")]
         {
             // Windows: 在屏幕右上角显示
-            let monitor = window.current_monitor()
+            let monitor = window
+                .current_monitor()
                 .map_err(|e| format!("获取屏幕信息失败: {}", e))?;
 
             let screen_size = if let Some(monitor) = monitor {
                 *monitor.size()
             } else {
-                PhysicalSize { width: 1920u32, height: 1080u32 }
+                PhysicalSize {
+                    width: 1920u32,
+                    height: 1080u32,
+                }
             };
 
-            let window_size = window.outer_size()
+            let window_size = window
+                .outer_size()
                 .map_err(|e| format!("获取窗口大小失败: {}", e))?;
 
             let x = screen_size.width as i32 - window_size.width as i32 - 20;
@@ -95,16 +105,21 @@ impl MenuBarManager {
         #[cfg(target_os = "linux")]
         {
             // Linux: 在屏幕右上角显示
-            let monitor = window.current_monitor()
+            let monitor = window
+                .current_monitor()
                 .map_err(|e| format!("获取屏幕信息失败: {}", e))?;
 
             let screen_size = if let Some(monitor) = monitor {
                 *monitor.size()
             } else {
-                PhysicalSize { width: 1920u32, height: 1080u32 }
+                PhysicalSize {
+                    width: 1920u32,
+                    height: 1080u32,
+                }
             };
 
-            let window_size = window.outer_size()
+            let window_size = window
+                .outer_size()
                 .map_err(|e| format!("获取窗口大小失败: {}", e))?;
 
             let x = screen_size.width as i32 - window_size.width as i32 - 20;

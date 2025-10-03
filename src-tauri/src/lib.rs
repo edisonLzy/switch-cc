@@ -9,14 +9,17 @@ use store::AppState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager, Emitter,
+    Emitter, Manager,
 };
 
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
 
 /// 创建动态托盘菜单
-pub fn create_tray_menu(app: &tauri::AppHandle, app_state: &AppState) -> Result<Menu<tauri::Wry>, String> {
+pub fn create_tray_menu(
+    app: &tauri::AppHandle,
+    app_state: &AppState,
+) -> Result<Menu<tauri::Wry>, String> {
     let config = app_state
         .config
         .lock()

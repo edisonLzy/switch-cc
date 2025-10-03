@@ -1,8 +1,8 @@
+use crate::config;
+use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use crate::provider::Provider;
-use crate::config;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMode {
@@ -43,7 +43,8 @@ impl AppConfig {
                 category: Some("official".to_string()),
                 created_at: Some(chrono::Utc::now().timestamp_millis() as u64),
             };
-            self.providers.insert("official".to_string(), official_provider);
+            self.providers
+                .insert("official".to_string(), official_provider);
         }
     }
 }
@@ -61,19 +62,28 @@ impl AppState {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let config = self.config.lock().map_err(|e| format!("获取锁失败: {}", e))?;
+        let config = self
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
         config::save_config(&*config)
     }
 
     pub fn set_app_mode(&self, mode: AppMode) -> Result<(), String> {
-        let mut config = self.config.lock().map_err(|e| format!("获取锁失败: {}", e))?;
+        let mut config = self
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
         config.app_mode = mode;
         drop(config);
         self.save()
     }
 
     pub fn get_app_mode(&self) -> Result<AppMode, String> {
-        let config = self.config.lock().map_err(|e| format!("获取锁失败: {}", e))?;
+        let config = self
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
         Ok(config.app_mode.clone())
     }
 }

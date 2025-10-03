@@ -44,9 +44,7 @@ impl Provider {
         }
 
         // 检查 env 节点
-        let env = self.settings_config
-            .get("env")
-            .ok_or("缺少 env 配置节")?;
+        let env = self.settings_config.get("env").ok_or("缺少 env 配置节")?;
 
         if !env.is_object() {
             return Err("env 必须是一个对象".to_string());
