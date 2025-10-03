@@ -1,320 +1,282 @@
-name: Release
+# macOS 应用构建和发布工作流
+# 用于构建 Tauri 桌面应用并发布到 GitHub Releases，适用于开发者分发
+name: Build and Release macOS App
 
+# 触发条件：推送到 master 分支或手动触发
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [master]
+  # 支持手动触发，方便开发者按需构建
+  workflow_dispatch:
 
-permissions:
-  contents: write
-
-concurrency:
-  group: release-${{ github.ref_name }}
-  cancel-in-progress: true
+# 环境变量配置
+env:
+  # 启用彩色输出，便于查看构建日志
+  FORCE_COLOR: 1
+  # Node.js 版本
+  NODE_VERSION: '18'
 
 jobs:
-  release:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-22.04
-          - os: macos-14
+  build-macos:
+    name: Build macOS Application
+    runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      # 1. 代码检出 - 获取完整的仓库代码
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # 获取完整的 Git 历史，用于生成版本信息
+          fetch-depth: 0
 
+      # 2. 设置 Node.js 环境
+      # Tauri 前端需要 Node.js 来构建 React + Vite 项目
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
+          # 使用官方 npm 注册表
+          registry-url: 'https://registry.npmjs.org'
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add macOS targets
-        if: runner.os == 'macOS'
-        run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
-      - name: Install Linux system deps
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          # Core build tools and pkg-config
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            pkg-config \
-            curl \
-            wget \
-            file \
-            patchelf \
-            libssl-dev
-          # GTK/GLib stack for gdk-3.0, glib-2.0, gio-2.0
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libayatana-appindicator3-dev
-          # WebKit2GTK (version differs across Ubuntu images; try 4.1 then 4.0)
-          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev \
-            || sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.0-dev
-          # libsoup also changed major version; prefer 3.0 with fallback to 2.4
-          sudo apt-get install -y --no-install-recommends libsoup-3.0-dev \
-            || sudo apt-get install -y --no-install-recommends libsoup2.4-dev
+      # 3. 设置 pnpm 包管理器（使用官方 Action，避免经由 npm 安装）
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
-          version: 10.12.3
           run_install: false
 
+      # 4. 获取 pnpm 缓存目录
       - name: Get pnpm store directory
-        id: pnpm-store
         shell: bash
-        run: echo "path=$(pnpm store path --silent)" >> $GITHUB_OUTPUT
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
-      - name: Setup pnpm cache
+      # 5. 缓存 pnpm 依赖
+      # 缓存机制可以显著加速构建过程
+      - name: Cache pnpm dependencies
         uses: actions/cache@v4
         with:
-          path: ${{ steps.pnpm-store.outputs.path }}
+          path: ${{ env.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: ${{ runner.os }}-pnpm-store-
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
 
-      - name: Install frontend deps
+      # 6. 安装 Rust 工具链
+      # Tauri 后端使用 Rust 编写，需要 Rust 编译器
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # 安装稳定版 Rust
+          toolchain: stable
+          # macOS 构建目标
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      # 7. 缓存 Rust 依赖
+      # Rust 编译时间较长，缓存可以显著提升构建速度
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          # 缓存 Cargo 构建产物
+          workspaces: src-tauri
+
+      # 8. 安装前端依赖
+      # 安装 React、Vite 等前端构建依赖
+      - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Prepare Tauri signing key
-        shell: bash
+      # 9. 自动版本更新
+      # 根据 commit 消息自动确定版本更新类型并更新配置文件
+      - name: Auto version bump
+        id: version_bump
         run: |
-          # 调试：检查 Secret 是否存在
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret 为空或不存在" >&2
-            echo "请检查 GitHub 仓库 Settings > Secrets and variables > Actions" >&2
-            exit 1
-          fi
-          
-          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
-          # 目标：提供正确的私钥“文件路径”给 Tauri CLI，避免内容解码歧义
-          KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
-          # 情况 1：原始两行文本（第一行以 "untrusted comment:" 开头）
-          if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
-            printf '%s\n' "$RAW" > "$KEY_PATH"
-            echo "✅ 使用原始两行密钥文件格式"
-          else
-            # 情况 2：整体被 base64 包裹（解包后应当是两行）
-            if DECODED=$(printf '%s' "$RAW" | (base64 --decode 2>/dev/null || base64 -D 2>/dev/null)) \
-               && echo "$DECODED" | head -n1 | grep -q '^untrusted comment:'; then
-              printf '%s\n' "$DECODED" > "$KEY_PATH"
-              echo "✅ 成功解码 base64 包裹密钥，已还原为两行文件"
-            else
-              # 情况 3：已是第二行（纯 Base64 一行）→ 构造两行文件
-              if echo "$RAW" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
-                ONE=$(printf '%s' "$RAW" | tr -d '\r\n')
-                printf '%s\n%s\n' "untrusted comment: tauri signing key" "$ONE" > "$KEY_PATH"
-                echo "✅ 使用一行 Base64 私钥，已构造两行文件"
-              else
-                echo "❌ TAURI_SIGNING_PRIVATE_KEY 格式无法识别：既不是两行原文，也不是其 base64，亦非一行 base64" >&2
-                echo "密钥前10个字符: $(echo "$RAW" | head -c 10)..." >&2
-                exit 1
-              fi
-            fi
-          fi
-          # 将“完整两行内容”作为环境变量注入（Tauri 支持传入完整私钥文本或文件路径）
-          # 使用多行写入语法，保持换行以便解析
-          # 将完整两行私钥内容进行 base64 编码，作为单行内容注入环境变量
-          if command -v base64 >/dev/null 2>&1; then
-            KEY_B64=$(base64 < "$KEY_PATH" | tr -d '\r\n')
-          elif command -v openssl >/dev/null 2>&1; then
-            KEY_B64=$(openssl base64 -A -in "$KEY_PATH")
-          else
-            KEY_B64=$(KEY_PATH="$KEY_PATH" node -e "process.stdout.write(require('fs').readFileSync(process.env.KEY_PATH).toString('base64'))")
-          fi
-          if [ -z "$KEY_B64" ]; then
-            echo "❌ 无法生成私钥 base64 内容" >&2
-            exit 1
-          fi
-          echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> $GITHUB_ENV
-          fi
-          echo "✅ Tauri signing key prepared"
-      - name: Build Tauri App (macOS)
-        if: runner.os == 'macOS'
-        run: pnpm tauri build --target universal-apple-darwin
+          echo "开始版本检测和更新..."
 
-      - name: Build Tauri App (Linux)
-        if: runner.os == 'Linux'
-        run: pnpm tauri build
+          # 获取当前版本号（从 package.json）
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "当前版本: $CURRENT_VERSION"
 
-      - name: Prepare macOS Assets
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mkdir -p release-assets
-          echo "Looking for updater artifact (.tar.gz) and .app for zip..."
-          TAR_GZ=""; APP_PATH=""
-          for path in \
-            "src-tauri/target/universal-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/aarch64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/x86_64-apple-darwin/release/bundle/macos" \
-            "src-tauri/target/release/bundle/macos"; do
-            if [ -d "$path" ]; then
-              [ -z "$TAR_GZ" ] && TAR_GZ=$(find "$path" -maxdepth 1 -name "*.tar.gz" -type f | head -1 || true)
-              [ -z "$APP_PATH" ] && APP_PATH=$(find "$path" -maxdepth 1 -name "*.app" -type d | head -1 || true)
-            fi
-          done
-          if [ -z "$TAR_GZ" ]; then
-            echo "No macOS .tar.gz updater artifact found" >&2
-            exit 1
-          fi
-          cp "$TAR_GZ" release-assets/
-          [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" release-assets/ || echo ".sig for macOS not found yet"
-          echo "macOS updater artifact copied: $(basename "$TAR_GZ")"
-          if [ -n "$APP_PATH" ]; then
-            APP_DIR=$(dirname "$APP_PATH"); APP_NAME=$(basename "$APP_PATH")
-            cd "$APP_DIR"
-            ditto -c -k --sequesterRsrc --keepParent "$APP_NAME" "CC-Switch-macOS.zip"
-            mv "CC-Switch-macOS.zip" "$GITHUB_WORKSPACE/release-assets/"
-            echo "macOS zip ready: CC-Switch-macOS.zip"
+          # 获取最新的 commit 消息
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          echo "Commit 消息: $COMMIT_MSG"
+
+          # 版本更新逻辑
+          if [[ "$COMMIT_MSG" =~ ^feat(\(.+\))?!: ]] || [[ "$COMMIT_MSG" =~ BREAKING[[:space:]]CHANGE ]]; then
+            # Major 版本更新：feat!: 或包含 BREAKING CHANGE
+            VERSION_TYPE="major"
+            echo "检测到 BREAKING CHANGE，执行 major 版本更新"
+          elif [[ "$COMMIT_MSG" =~ ^feat(\(.+\))?: ]]; then
+            # Minor 版本更新：feat:
+            VERSION_TYPE="minor"
+            echo "检测到新功能，执行 minor 版本更新"
+          elif [[ "$COMMIT_MSG" =~ ^fix(\(.+\))?: ]]; then
+            # Patch 版本更新：fix:
+            VERSION_TYPE="patch"
+            echo "检测到修复，执行 patch 版本更新"
           else
-            echo "No .app found to zip (optional)" >&2
+            # 默认 patch 版本更新
+            VERSION_TYPE="patch"
+            echo "其他提交类型，执行 patch 版本更新"
           fi
-      - name: Prepare Linux Assets
-        if: runner.os == 'Linux'
-        shell: bash
+
+          # 计算新版本号
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          MAJOR=${VERSION_PARTS[0]}
+          MINOR=${VERSION_PARTS[1]}
+          PATCH=${VERSION_PARTS[2]}
+
+          case $VERSION_TYPE in
+            "major")
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            "minor")
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            "patch")
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "新版本号: $NEW_VERSION"
+
+          # 更新 package.json
+          echo "更新 package.json 版本..."
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$NEW_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # 更新 src-tauri/tauri.conf.json
+          echo "更新 tauri.conf.json 版本..."
+          node -e "
+            const fs = require('fs');
+            const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+            config.version = '$NEW_VERSION';
+            fs.writeFileSync('src-tauri/tauri.conf.json', JSON.stringify(config, null, 2) + '\n');
+          "
+
+          # 输出版本信息供后续步骤使用
+          echo "version_type=$VERSION_TYPE" >> $GITHUB_OUTPUT
+          echo "old_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          echo "✅ 版本更新完成: $CURRENT_VERSION → $NEW_VERSION ($VERSION_TYPE)"
+
+      # 10. 构建 Tauri 应用
+      # 这是核心步骤：构建前端 + 后端并打包成 macOS 应用
+      - name: Build Tauri application
         run: |
-          set -euxo pipefail
-          mkdir -p release-assets
-          # Updater artifact: AppImage（含对应 .sig）
-          APPIMAGE=$(find src-tauri/target/release/bundle -name "*.AppImage" | head -1 || true)
-          if [ -n "$APPIMAGE" ]; then
-            cp "$APPIMAGE" release-assets/
-            [ -f "$APPIMAGE.sig" ] && cp "$APPIMAGE.sig" release-assets/ || echo ".sig for AppImage not found"
-            echo "AppImage copied"
-          else
-            echo "No AppImage found under target/release/bundle" >&2
-          fi
-          # 额外上传 .deb（用于手动安装，不参与 Updater）
-          DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
-          if [ -n "$DEB" ]; then
-            cp "$DEB" release-assets/
-            echo "Deb package copied"
-          else
-            echo "No .deb found (optional)"
-          fi
-      - name: List prepared assets
-        shell: bash
+          echo "开始构建 Tauri 应用..."
+          # 首先构建前端
+          echo "构建前端..."
+          pnpm build:renderer
+
+          # 然后构建 Tauri 应用
+          echo "构建 Tauri 后端并打包..."
+          pnpm tauri build --verbose
+        env:
+          # 禁用代码签名，适用于开发者分发
+          # 设置空值来禁用 Tauri 的代码签名功能
+          TAURI_PRIVATE_KEY: ""
+          TAURI_KEY_PASSWORD: ""
+          # 确保构建目标包含 Apple Silicon 和 Intel 架构
+          TAURI_BUILD_TARGETS: "universal-apple-darwin"
+
+      # 11. 查找构建产物
+      # 构建完成后，需要找到生成的 .app 和 .dmg 文件
+      - name: Find build artifacts
+        id: find_artifacts
         run: |
-          ls -la release-assets || true
-      - name: Collect Signatures
-        shell: bash
+          echo "查找构建产物..."
+
+          # 查找 .app 文件
+          APP_PATH=$(find src-tauri/target/release/bundle/macos -name "*.app" -type d | head -1)
+          echo "找到 .app 文件: $APP_PATH"
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+
+          # 查找 .dmg 文件
+          DMG_PATH=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1)
+          echo "找到 .dmg 文件: $DMG_PATH"
+          echo "dmg_path=$DMG_PATH" >> $GITHUB_OUTPUT
+
+          # 获取应用名称（从 .app 路径提取）
+          APP_NAME=$(basename "$APP_PATH" .app)
+          echo "应用名称: $APP_NAME"
+          echo "app_name=$APP_NAME" >> $GITHUB_OUTPUT
+
+      # 12. 创建应用压缩包
+      # 为 .app 文件创建压缩包，作为备用分发格式
+      - name: Create app archive
         run: |
-          set -euo pipefail
-          echo "Collected signatures (if any alongside artifacts):"
-          ls -la release-assets/*.sig || echo "No signatures found"
-      - name: Upload Release Assets
+          echo "创建应用压缩包..."
+          cd "$(dirname "${{ steps.find_artifacts.outputs.app_path }}")"
+          tar -czf "${{ steps.find_artifacts.outputs.app_name }}.app.tar.gz" "${{ steps.find_artifacts.outputs.app_name }}.app"
+          echo "压缩包已创建: $PWD/${{ steps.find_artifacts.outputs.app_name }}.app.tar.gz"
+
+      # 13. 提交版本更新
+      # 将版本更新提交回仓库，保持版本同步
+      - name: Commit version bump
+        run: |
+          echo "提交版本更新到仓库..."
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add package.json src-tauri/tauri.conf.json
+          git commit -m "chore(release): bump version to ${{ steps.version_bump.outputs.new_version }} [skip ci]" || echo "No changes to commit"
+          git push || echo "Nothing to push"
+
+      # 14. 创建 GitHub Release
+      # 自动创建 Release 并上传构建产物
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: CC Switch ${{ github.ref_name }}
-          prerelease: true
+          # 使用语义化版本标签
+          tag_name: "v${{ steps.version_bump.outputs.new_version }}"
+          name: "Switch CC v${{ steps.version_bump.outputs.new_version }}"
+          # 生成 Release Notes
           body: |
-            ## CC Switch ${{ github.ref_name }}
-            Claude Code 供应商切换工具
-            ### 下载
-            - macOS: `CC-Switch-macOS.zip`（解压即用）
-            - Linux: `*.deb`（Debian/Ubuntu 安装包）
-            ---
-            提示：macOS 如遇“已损坏”提示，可在终端执行：`xattr -cr "/Applications/CC Switch.app"`
-          files: release-assets/*
+            ## Switch CC macOS 版本发布
+
+            **版本信息:**
+            - 版本号: v${{ steps.version_bump.outputs.new_version }}
+            - 版本类型: ${{ steps.version_bump.outputs.version_type }} (从 v${{ steps.version_bump.outputs.old_version }} 升级)
+            - 构建时间: ${{ github.event.head_commit.timestamp }}
+            - 提交信息: ${{ github.event.head_commit.message }}
+            - 提交哈希: ${{ github.sha }}
+
+            **安装说明:**
+            1. 下载 `.dmg` 文件（推荐）
+            2. 双击挂载磁盘镜像
+            3. 将应用拖拽到 Applications 文件夹
+            4. 首次运行时右键选择"打开"以绕过安全警告
+
+            **备用格式:**
+            - 如果 `.dmg` 文件无法使用，可下载 `.app.tar.gz` 压缩包
+            - 解压后将 `.app` 文件拖拽到 Applications 文件夹
+
+            **注意事项:**
+            - 这是未签名的开发者版本，首次运行会有安全警告
+            - 适用于开发者和测试用户使用
+          # 标记为预发布版本
+          prerelease: false
+          # 上传构建产物
+          files: |
+            ${{ steps.find_artifacts.outputs.dmg_path }}
+            $(dirname "${{ steps.find_artifacts.outputs.app_path }}")/${{ steps.find_artifacts.outputs.app_name }}.app.tar.gz
         env:
+          # 使用 GitHub Token 进行认证
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: List generated bundles (debug)
-        if: always()
-        shell: bash
+      # 15. 构建完成通知
+      - name: Build completed
         run: |
-          echo "Listing bundles in src-tauri/target..."
-          find src-tauri/target -maxdepth 4 -type f -name "*.*" 2>/dev/null || true
-  assemble-latest-json:
-    name: Assemble latest.json
-    runs-on: ubuntu-22.04
-    needs: release
-    permissions:
-      contents: write
-    steps:
-      - name: Prepare GH
-        run: |
-          gh --version || (type -p curl >/dev/null && sudo apt-get update && sudo apt-get install -y gh || true)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download all release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euxo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          mkdir -p dl
-          gh release download "$TAG" --dir dl --repo "$GITHUB_REPOSITORY"
-          ls -la dl || true
-      - name: Generate latest.json
-        env:
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          VERSION="${TAG#v}"
-          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          base_url="https://github.com/$REPO/releases/download/$TAG"
-          # 初始化空平台映射
-          mac_url=""; mac_sig=""
-          linux_url=""; linux_sig=""
-          shopt -s nullglob
-          for sig in dl/*.sig; do
-            base=${sig%.sig}
-            fname=$(basename "$base")
-            url="$base_url/$fname"
-            sig_content=$(cat "$sig")
-            case "$fname" in
-              *.tar.gz)
-                # 视为 macOS updater artifact
-                mac_url="$url"; mac_sig="$sig_content";;
-              *.AppImage|*.appimage)
-                linux_url="$url"; linux_sig="$sig_content";;
-            esac
-          done
-          # 构造 JSON（仅包含存在的目标）
-          tmp_json=$(mktemp)
-          {
-            echo '{'
-            echo "  \"version\": \"$VERSION\",";
-            echo "  \"notes\": \"Release $TAG\",";
-            echo "  \"pub_date\": \"$PUB_DATE\",";
-            echo '  "platforms": {'
-            first=1
-            if [ -n "$mac_url" ] && [ -n "$mac_sig" ]; then
-              # 为兼容 arm64 / x64，重复写入两个键，指向同一 universal 包
-              for key in darwin-aarch64 darwin-x86_64; do
-                [ $first -eq 0 ] && echo ','
-                echo "    \"$key\": {\"signature\": \"$mac_sig\", \"url\": \"$mac_url\"}"
-                first=0
-              done
-            fi
-            if [ -n "$linux_url" ] && [ -n "$linux_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"linux-x86_64\": {\"signature\": \"$linux_sig\", \"url\": \"$linux_url\"}"
-              first=0
-            fi
-            echo '  }'
-            echo '}'
-          } > "$tmp_json"
-          echo "Generated latest.json:" && cat "$tmp_json"
-          mv "$tmp_json" latest.json
-      - name: Upload latest.json to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euxo pipefail
-          gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+          echo "🎉 构建完成！"
+          echo "📦 版本信息:"
+          echo "  - 版本更新: v${{ steps.version_bump.outputs.old_version }} → v${{ steps.version_bump.outputs.new_version }} (${{ steps.version_bump.outputs.version_type }})"
+          echo "📦 生成的产物:"
+          echo "  - DMG 安装包: ${{ steps.find_artifacts.outputs.dmg_path }}"
+          echo "  - APP 压缩包: ${{ steps.find_artifacts.outputs.app_name }}.app.tar.gz"
+          echo "🚀 Release 已创建: v${{ steps.version_bump.outputs.new_version }}"
