@@ -143,11 +143,11 @@ pub async fn switch_provider(
         }
     }
 
-    // 发射事件到前端
+    // 发射事件到前端（明确发送到主窗口）
     let event_data = serde_json::json!({
         "providerId": provider_id
     });
-    if let Err(e) = app.emit("provider-switched", event_data) {
+    if let Err(e) = app.emit_to("main", "provider-switched", event_data) {
         log::error!("发射供应商切换事件失败: {}", e);
     }
 

@@ -9,7 +9,7 @@ use store::AppState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    Manager,
 };
 
 #[cfg(target_os = "macos")]
@@ -116,26 +116,11 @@ async fn switch_provider_internal(
     provider_id: String,
 ) -> Result<(), String> {
     if let Some(app_state) = app.try_state::<AppState>() {
-        let provider_id_clone = provider_id.clone();
-
+        // switch_provider 命令会处理所有逻辑：
+        // 1. 更新配置和 Claude 配置文件
+        // 2. 更新托盘菜单
+        // 3. 发射事件到主窗口前端
         commands::switch_provider(app.clone(), app_state.clone().into(), provider_id).await?;
-
-        // 切换成功后重新创建托盘菜单
-        if let Ok(new_menu) = create_tray_menu(app, app_state.inner()) {
-            if let Some(tray) = app.tray_by_id("main") {
-                if let Err(e) = tray.set_menu(Some(new_menu)) {
-                    log::error!("更新托盘菜单失败: {}", e);
-                }
-            }
-        }
-
-        // 发射事件到前端
-        let event_data = serde_json::json!({
-            "providerId": provider_id_clone
-        });
-        if let Err(e) = app.emit("provider-switched", event_data) {
-            log::error!("发射供应商切换事件失败: {}", e);
-        }
     }
     Ok(())
 }
