@@ -47,11 +47,6 @@
     ],
     "security": {
       "csp": "default-src 'self' 'unsafe-inline' data: blob: https://api.github.com https://github.com"
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false
     }
   },
   "bundle": {
