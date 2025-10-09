@@ -19,7 +19,13 @@
     "core:window:allow-unminimize",
     "core:app:default",
     "core:app:allow-app-show",
-    "core:app:allow-app-hide"
+    "core:app:allow-app-hide",
+    "dialog:default",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "dialog:allow-open",
+    "dialog:allow-save"
   ]
 }
 
