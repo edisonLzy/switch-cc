@@ -19,6 +19,7 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [pathCopied, setPathCopied] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +50,18 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
         setTimeout(() => setCopied(false), 2000);
       } catch (error) {
         console.error("复制失败:", error);
+      }
+    }
+  };
+
+  const handleCopyPath = async () => {
+    if (configData?.path) {
+      try {
+        await navigator.clipboard.writeText(configData.path);
+        setPathCopied(true);
+        setTimeout(() => setPathCopied(false), 2000);
+      } catch (error) {
+        console.error("复制路径失败:", error);
       }
     }
   };
@@ -87,11 +100,31 @@ function ClaudeConfigModal({ isOpen, onClose }: ClaudeConfigModalProps) {
                       {configData?.exists ? "是" : "否"}
                     </Badge>
                   </div>
-                  <div className="flex items-center justify-between">
+                  <div className="space-y-2">
                     <span className="text-foreground/70">配置路径：</span>
-                    <span className="text-sm font-mono text-foreground/80 max-w-md truncate">
-                      {configData?.path}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono text-foreground/80 flex-1 truncate">
+                        {configData?.path}
+                      </span>
+                      <Button
+                        onClick={handleCopyPath}
+                        variant="ghost"
+                        size="sm"
+                        className="gap-2 flex-shrink-0"
+                      >
+                        {pathCopied ? (
+                          <>
+                            <Check size={14} />
+                            已复制
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={14} />
+                            复制
+                          </>
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </CardContent>

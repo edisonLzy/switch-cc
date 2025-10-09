@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Provider } from "../../types";
-import { Save } from "lucide-react";
+import { Save, Wand2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,17 @@ function EditProviderModal({
   });
 
   const [error, setError] = useState("");
+
+  const handleFormatJson = () => {
+    try {
+      const parsed = JSON.parse(formData.configJson);
+      const formatted = JSON.stringify(parsed, null, 2);
+      setFormData((prev) => ({ ...prev, configJson: formatted }));
+      setError("");
+    } catch (error) {
+      setError("JSON 格式错误，无法格式化");
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,7 +102,19 @@ function EditProviderModal({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="edit-config">配置 JSON *</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="edit-config">配置 JSON *</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleFormatJson}
+                  className="gap-2"
+                >
+                  <Wand2 size={14} />
+                  格式化
+                </Button>
+              </div>
               <Textarea
                 id="edit-config"
                 required

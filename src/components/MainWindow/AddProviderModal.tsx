@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Provider } from "../../types";
-import { Plus } from "lucide-react";
+import { Plus, Wand2 } from "lucide-react";
 import { presetProviders, generateDefaultConfig } from "../../config/presets";
 import {
   Dialog,
@@ -31,6 +31,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
     baseUrl: "",
     customConfig: "{}",
   });
+  const [error, setError] = useState("");
 
   const handlePresetSelect = (presetIndex: number) => {
     const preset = presetProviders[presetIndex];
@@ -51,6 +52,17 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
       name: "",
       customConfig: JSON.stringify(generateDefaultConfig(), null, 2),
     }));
+  };
+
+  const handleFormatJson = () => {
+    try {
+      const parsed = JSON.parse(formData.customConfig);
+      const formatted = JSON.stringify(parsed, null, 2);
+      setFormData((prev) => ({ ...prev, customConfig: formatted }));
+      setError("");
+    } catch (error) {
+      setError("JSON 格式错误，无法格式化");
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -215,7 +227,19 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="config">配置 JSON *</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="config">配置 JSON *</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleFormatJson}
+                    className="gap-2"
+                  >
+                    <Wand2 size={14} />
+                    格式化
+                  </Button>
+                </div>
                 <Textarea
                   id="config"
                   required
@@ -227,9 +251,10 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                       customConfig: e.target.value,
                     }))
                   }
-                  className="font-mono text-sm"
+                  className={`font-mono text-sm ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
                   placeholder="输入完整的配置 JSON"
                 />
+                {error && <p className="text-sm text-red-600">{error}</p>}
               </div>
             </div>
 
