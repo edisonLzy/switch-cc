@@ -227,20 +227,27 @@ jobs:
       - name: Commit version bump
         run: |
           echo "提交版本更新到仓库..."
-          # 配置 Git 用户信息
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          # 配置 Git 用户信息（使用 GitHub Actions bot）
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
           # 添加和提交更改
           git add package.json src-tauri/tauri.conf.json
-          git commit -m "chore(release): bump version to ${{ steps.version_bump.outputs.new_version }} [skip ci]" || echo "No changes to commit"
+          
+          # 检查是否有更改需要提交
+          if git diff --staged --quiet; then
+            echo "没有版本更改需要提交"
+            exit 0
+          fi
+          
+          git commit -m "chore(release): bump version to ${{ steps.version_bump.outputs.new_version }} [skip ci]"
 
           # 推送到远程仓库
-          # 注意：这里会使用 checkout 时配置的 token
-          git push origin HEAD:master || echo "Push failed - this is expected if branch protection is enabled"
+          echo "推送版本更新到 master 分支..."
+          git push origin HEAD:master
         env:
-          # 使用与 checkout 相同的 token
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || github.token }}
+          # 使用 PAT token 以绕过 rulesets 限制
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
       # 14. 创建 GitHub Release
       # 自动创建 Release 并上传构建产物
