@@ -18,7 +18,7 @@ env:
   # 启用彩色输出，便于查看构建日志
   FORCE_COLOR: 1
   # Node.js 版本
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
 
 jobs:
   build-macos:
@@ -91,7 +91,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # 9. 自动版本更新
-      # 根据 commit 消息自动确定版本更新类型并更新配置文件
+      # 根据 PR 分支中所有 commit 消息自动确定版本更新类型并更新配置文件
       - name: Auto version bump
         id: version_bump
         run: |
@@ -101,27 +101,48 @@ jobs:
           CURRENT_VERSION=$(node -p "require('./package.json').version")
           echo "当前版本: $CURRENT_VERSION"
 
-          # 获取最新的 commit 消息
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          echo "Commit 消息: $COMMIT_MSG"
+          # 获取最新的 git tag（如果存在）
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-          # 版本更新逻辑
-          if [[ "$COMMIT_MSG" =~ ^feat(\(.+\))?!: ]] || [[ "$COMMIT_MSG" =~ BREAKING[[:space:]]CHANGE ]]; then
-            # Major 版本更新：feat!: 或包含 BREAKING CHANGE
-            VERSION_TYPE="major"
-            echo "检测到 BREAKING CHANGE，执行 major 版本更新"
-          elif [[ "$COMMIT_MSG" =~ ^feat(\(.+\))?: ]]; then
-            # Minor 版本更新：feat:
-            VERSION_TYPE="minor"
-            echo "检测到新功能，执行 minor 版本更新"
-          elif [[ "$COMMIT_MSG" =~ ^fix(\(.+\))?: ]]; then
-            # Patch 版本更新：fix:
-            VERSION_TYPE="patch"
-            echo "检测到修复，执行 patch 版本更新"
+          if [ -n "$LATEST_TAG" ]; then
+            echo "最新 tag: $LATEST_TAG"
+            # 获取从最新 tag 到 HEAD 的所有 commit 消息
+            COMMIT_RANGE="$LATEST_TAG..HEAD"
           else
-            # 默认 patch 版本更新
+            echo "未找到 tag，使用所有 commit 历史"
+            # 如果没有 tag，获取所有 commits（限制最近 100 条以避免性能问题）
+            COMMIT_RANGE="HEAD~100..HEAD"
+          fi
+
+          echo "分析 commit 范围: $COMMIT_RANGE"
+          echo "-----------------------------------"
+
+          # 获取所有 commit 消息（完整消息体，包括 body）
+          ALL_COMMITS=$(git log --format=%B "$COMMIT_RANGE" 2>/dev/null || git log --format=%B -n 1 HEAD)
+
+          # 输出所有被分析的 commits（用于调试）
+          echo "待分析的 commits:"
+          git log --oneline "$COMMIT_RANGE" 2>/dev/null || git log --oneline -n 1 HEAD
+          echo "-----------------------------------"
+
+          # 版本更新逻辑（按优先级：major > minor > patch）
+          VERSION_TYPE="patch"  # 默认值
+
+          # 检查是否有 BREAKING CHANGE (major)
+          if echo "$ALL_COMMITS" | grep -qE '^feat(\(.+\))?!:|BREAKING[[:space:]]CHANGE'; then
+            VERSION_TYPE="major"
+            echo "✓ 检测到 BREAKING CHANGE，执行 major 版本更新"
+          # 检查是否有新功能 (minor)
+          elif echo "$ALL_COMMITS" | grep -qE '^feat(\(.+\))?:'; then
+            VERSION_TYPE="minor"
+            echo "✓ 检测到新功能 (feat)，执行 minor 版本更新"
+          # 检查是否有修复 (patch)
+          elif echo "$ALL_COMMITS" | grep -qE '^fix(\(.+\))?:'; then
             VERSION_TYPE="patch"
-            echo "其他提交类型，执行 patch 版本更新"
+            echo "✓ 检测到修复 (fix)，执行 patch 版本更新"
+          else
+            VERSION_TYPE="patch"
+            echo "✓ 未检测到语义化提交，执行默认 patch 版本更新"
           fi
 
           # 计算新版本号
