@@ -1,6 +1,6 @@
 {
   "name": "switch-cc",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Claude Config 供应商切换工具",
   "scripts": {
     "dev": "pnpm tauri dev",
