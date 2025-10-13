@@ -41,13 +41,13 @@ function ProviderList({
   if (providerList.length === 0) {
     return (
       <div className="text-center py-12">
-        <div className="text-foreground/40 mb-4">
+        <div className="text-foreground opacity-40 mb-4">
           <Play size={48} className="mx-auto" />
         </div>
         <h3 className="text-lg font-heading text-foreground mb-2">
           还没有供应商配置
         </h3>
-        <p className="text-foreground/60">
+        <p className="text-foreground opacity-70">
           点击上方"添加供应商"按钮开始配置您的第一个 Claude 供应商
         </p>
       </div>
@@ -61,7 +61,7 @@ function ProviderList({
         <div className="relative flex-1">
           <Search
             size={18}
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground/50"
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground opacity-50"
           />
           <Input
             type="text"
@@ -79,13 +79,13 @@ function ProviderList({
       {/* 列表区域 */}
       {filteredProviders.length === 0 && searchTerm.trim() ? (
         <div className="text-center py-12">
-          <div className="text-foreground/40 mb-4">
+          <div className="text-foreground opacity-40 mb-4">
             <Search size={48} className="mx-auto" />
           </div>
           <h3 className="text-lg font-heading text-foreground mb-2">
             没有找到匹配的供应商
           </h3>
-          <p className="text-foreground/60">
+          <p className="text-foreground opacity-70">
             尝试修改搜索关键词或清空搜索框查看所有供应商
           </p>
         </div>
@@ -129,7 +129,7 @@ function ProviderList({
                       )}
 
                       {provider.createdAt && (
-                        <span className="text-foreground/60">
+                        <span className="text-foreground opacity-70">
                           创建于 {formatTimestamp(provider.createdAt)}
                         </span>
                       )}
