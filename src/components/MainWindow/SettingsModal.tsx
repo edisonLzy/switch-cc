@@ -24,9 +24,11 @@ function SettingsModal({ onClose }: SettingsModalProps) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [appVersion, setAppVersion] = useState<string>("");
 
   useEffect(() => {
     loadSettings();
+    loadAppVersion();
   }, []);
 
   const loadSettings = async () => {
@@ -37,6 +39,16 @@ function SettingsModal({ onClose }: SettingsModalProps) {
       console.error("加载设置失败:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadAppVersion = async () => {
+    try {
+      const version = await api.getAppVersion();
+      setAppVersion(version);
+    } catch (error) {
+      console.error("加载版本信息失败:", error);
+      setAppVersion("未知");
     }
   };
 
@@ -208,7 +220,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-foreground opacity-70">版本:</span>
-                  <Badge variant="neutral">2.0.0</Badge>
+                  <Badge variant="neutral">{appVersion || "加载中..."}</Badge>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-foreground opacity-70">构建于:</span>

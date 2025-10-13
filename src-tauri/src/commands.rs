@@ -371,6 +371,12 @@ pub async fn check_for_updates(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn get_app_version() -> Result<String, String> {
+    // 从 Cargo.toml 获取版本号
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+#[tauri::command]
 pub async fn is_portable_mode() -> Result<bool, String> {
     // 检查是否为便携模式（例如检查可执行文件目录下是否有portable.txt）
     Ok(false)
