@@ -208,7 +208,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-foreground opacity-70">版本:</span>
-                  <Badge variant="neutral">1.0.0</Badge>
+                  <Badge variant="neutral">2.0.0</Badge>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-foreground opacity-70">构建于:</span>
