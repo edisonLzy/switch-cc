@@ -69,7 +69,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
         <DialogContent>
           <div className="p-6 text-center">
             <div className="w-8 h-8 border-4 border-main border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-            <p>加载设置中...</p>
+            <p className="text-foreground">加载设置中...</p>
           </div>
         </DialogContent>
       </Dialog>
@@ -162,7 +162,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
                   启用 MenuBar 快捷模式
                 </Label>
               </div>
-              <p className="text-xs text-foreground/60 mt-2 ml-7">
+              <p className="text-xs text-foreground opacity-70 mt-2 ml-7">
                 启用后可通过系统菜单栏快速切换供应商
               </p>
             </CardContent>
@@ -192,7 +192,7 @@ function SettingsModal({ onClose }: SettingsModalProps) {
                   }
                   placeholder="默认使用 ~/.claude"
                 />
-                <p className="text-xs text-foreground/60">
+                <p className="text-xs text-foreground opacity-70">
                   留空使用默认路径 ~/.claude
                 </p>
               </div>
@@ -207,11 +207,11 @@ function SettingsModal({ onClose }: SettingsModalProps) {
             <CardContent>
               <div className="space-y-2 mb-4">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-foreground/60">版本：</span>
+                  <span className="text-foreground opacity-70">版本:</span>
                   <Badge variant="neutral">1.0.0</Badge>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-foreground/60">构建于：</span>
+                  <span className="text-foreground opacity-70">构建于:</span>
                   <Badge variant="neutral">Tauri 2.8</Badge>
                 </div>
               </div>

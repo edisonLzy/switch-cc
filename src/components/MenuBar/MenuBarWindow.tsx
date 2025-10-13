@@ -81,7 +81,7 @@ function MenuBarWindow() {
       <Card className="w-80 shadow-shadow">
         <CardContent className="p-4 text-center">
           <div className="w-6 h-6 border-2 border-main border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-sm text-foreground/60">加载中...</p>
+          <p className="text-sm text-foreground opacity-70">加载中...</p>
         </CardContent>
       </Card>
     );
@@ -147,10 +147,12 @@ function MenuBarWindow() {
       <CardContent className="p-0 max-h-96 overflow-y-auto">
         {providersList.length === 0 ? (
           <div className="p-6 text-center">
-            <div className="text-foreground/40 mb-2">
+            <div className="text-foreground opacity-40 mb-2">
               <Settings size={32} className="mx-auto" />
             </div>
-            <p className="text-sm text-foreground/60 mb-4">还没有配置供应商</p>
+            <p className="text-sm text-foreground opacity-70 mb-4">
+              还没有配置供应商
+            </p>
             <Button onClick={switchToMainWindow} size="sm">
               去添加供应商
             </Button>
@@ -190,7 +192,7 @@ function MenuBarWindow() {
                   {provider.id !== currentProviderId && (
                     <ChevronRight
                       size={16}
-                      className="text-foreground/40 group-hover:text-foreground/60 flex-shrink-0"
+                      className="text-foreground opacity-40 group-hover:opacity-70 flex-shrink-0"
                     />
                   )}
                 </div>
@@ -202,7 +204,7 @@ function MenuBarWindow() {
 
       {/* 底部操作 */}
       <div className="px-4 py-3 bg-secondary-background border-t-2 border-border">
-        <div className="flex items-center justify-between text-xs text-foreground/60">
+        <div className="flex items-center justify-between text-xs text-foreground opacity-70">
           <Badge variant="neutral" className="text-xs">
             {providersList.length} 个供应商
           </Badge>
