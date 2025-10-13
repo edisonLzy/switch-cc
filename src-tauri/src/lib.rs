@@ -267,6 +267,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::check_for_updates,
+            commands::get_app_version,
             commands::is_portable_mode,
             commands::set_app_mode,
             commands::get_app_mode,

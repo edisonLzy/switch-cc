@@ -2,8 +2,8 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/edisonLzy/switch-cc/releases)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)](https://github.com/edisonLzy/switch-cc/releases)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/edisonLzy/switch-cc/releases)
+[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/edisonLzy/switch-cc/releases)
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -64,7 +64,6 @@
 - ⚡ 快速切换供应商
 - 📊 显示当前激活配置
 - 🎨 简洁的下拉菜单
-- ⌨️ 支持键盘快捷键
 
 </td>
 </tr>
@@ -72,22 +71,20 @@
 
 ### 📦 预设供应商模板
 
-内置多个主流 API 供应商模板，开箱即用：
+内置多个主流 API 供应商模板,开箱即用：
 
-- 🌟 **Claude Official** - Anthropic 官方 API
-- 🇨🇳 **阿里云百炼** - 阿里巴巴通义千问兼容接口
-- 🤖 **智谱 AI** - GLM 系列模型接口
-- 🔀 **OpenRouter** - 多模型聚合服务
-- 🚀 **Together AI** - 高性能推理平台
+- 🤖 **智谱清言** - 智谱AI (GLM) 系列模型接口
+- 🔀 **AnyRouter** - 多模型聚合路由服务
+- 📦 **PackyCode** - 代码优化推理平台
 
 ### 🔧 高级特性
 
 - 🔄 **智能配置合并** - 只覆盖必要字段，保留用户自定义设置
-- 📝 **JSON 配置编辑器** - 支持高级用户直接编辑完整配置
+- 📝 **JSON 配置编辑器** - 支持高级用户直接编辑完整配置（基于 CodeMirror）
 - 🎨 **主题切换** - 亮色/暗色模式自动适配系统
-- 💾 **配置导入导出** - 备份和迁移配置更简单
-- 🔍 **配置预览** - 切换前查看完整的配置内容
-- 🔔 **切换提醒** - 操作反馈清晰，避免误操作
+- 🔍 **配置预览** - 查看当前 Claude 配置文件内容
+- ⚙️ **应用设置** - 自定义托盘行为、MenuBar 模式、配置路径等
+- 🔄 **自动更新** - 内置更新检查功能（Tauri Updater）
 
 ---
 
@@ -98,17 +95,14 @@
 | 平台 | 最低版本 | 推荐配置 |
 |------|----------|---------|
 | 🍎 **macOS** | macOS 10.15 (Catalina) | macOS 12+ (Apple Silicon 原生支持) |
-| 🪟 **Windows** | Windows 10 | Windows 11 x64 |
-| 🐧 **Linux** | Ubuntu 20.04+ | Ubuntu 22.04+ / Fedora 38+ |
 
-### 📦 下载说明
+### 📦 下载安装
 
 前往 [**Releases**](https://github.com/edisonLzy/switch-cc/releases) 页面下载最新版本：
 
-#### macOS
 ```bash
 # 下载 .dmg 文件
-Switch_CC_1.0.1_universal.dmg
+Switch_CC_2.0.0_universal.dmg
 
 # 安装步骤
 1. 双击挂载磁盘镜像
@@ -118,37 +112,12 @@ Switch_CC_1.0.1_universal.dmg
 
 **注意**：应用使用 ad-hoc 签名，首次运行需要右键"打开"确认。
 
-#### Windows
-```bash
-# 下载 .exe 安装程序
-Switch_CC_1.0.1_x64_setup.exe
-
-# 安装步骤
-1. 双击安装程序
-2. 按照向导完成安装
-3. 从开始菜单或桌面快捷方式启动
-```
-
-#### Linux
-```bash
-# AppImage (推荐 - 无需安装)
-chmod +x Switch_CC_1.0.1_amd64.AppImage
-./Switch_CC_1.0.1_amd64.AppImage
-
-# Debian/Ubuntu (.deb)
-sudo dpkg -i switch-cc_1.0.1_amd64.deb
-sudo apt-get install -f  # 修复依赖
-
-# 启动应用
-switch-cc
-```
-
 ### 🔄 自动更新机制
 
 - ✅ 每次代码合并到 master 自动构建新版本
 - ✅ 语义化版本管理（fix: patch, feat: minor, BREAKING: major）
 - ✅ Release 页面总是提供最新稳定版
-- ✅ 支持多平台同步发布
+- ✅ 应用内置更新检查（通过 Tauri Updater 插件）
 
 ---
 
@@ -204,15 +173,15 @@ switch-cc
 
 1. **命名规范**
    ```
-   ✅ 好的命名：Claude Official (个人)
-   ✅ 好的命名：百炼-开发环境
+   ✅ 好的命名：智谱清言-个人账号
+   ✅ 好的命名：AnyRouter-开发环境
    ❌ 差的命名：配置1
    ```
 
 2. **配置组织**
    - 按用途分组：个人/工作/测试
    - 按供应商分类：官方/代理/自建
-   - 标注额度信息：GPT-4 月度配额
+   - 标注额度信息：标明配额或到期时间
 
 3. **安全建议**
    - ⚠️ API Key 存储在本地配置文件中
@@ -221,16 +190,16 @@ switch-cc
 
 #### 🎯 常见使用场景
 
-**场景 1：个人 + 公司账号切换**
+**场景 1：个人 + 工作账号切换**
 ```
-配置 A: Claude Official (个人) - 个人项目使用
-配置 B: Claude Official (公司) - 工作项目使用
+配置 A: 智谱清言 (个人) - 个人项目使用
+配置 B: AnyRouter (工作) - 工作项目使用
 ```
 
 **场景 2：国内网络环境**
 ```
-配置 A: 阿里云百炼 - 国内稳定访问
-配置 B: Claude Official - 海外网络环境
+配置 A: 智谱清言 - 国内稳定访问
+配置 B: AnyRouter - 多模型路由服务
 ```
 
 **场景 3：配额管理**
@@ -243,30 +212,35 @@ switch-cc
 
 #### 查看当前 Claude 配置
 
-点击顶部的"👁️ 眼睛"图标，可以查看当前 `~/.claude/settings.json` 的完整内容。
+点击顶部的"👁️ 眼睛"图标，可以查看当前 `~/.claude/settings.json` 的完整内容。支持 JSON 语法高亮显示。
+
+#### 应用设置
+
+点击顶部的"⚙️ 设置"图标，可以配置：
+
+- **系统托盘**：是否在系统托盘显示图标、点击关闭时最小化到托盘
+- **MenuBar 模式**：启用/禁用 MenuBar 快捷模式
+- **配置路径**：自定义 Claude 配置目录（默认 ~/.claude）
+- **应用信息**：查看版本信息、检查更新
 
 #### 自定义配置
 
-对于高级用户，可以直接编辑 JSON 配置：
+对于高级用户，可以直接编辑 JSON 配置（使用 CodeMirror 编辑器）：
 
 ```json
 {
-  "api": "anthropic",
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "your-api-key",
     "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
-  },
-  "model": "claude-sonnet-4-20250514",
-  "maxTokens": 8192
+  }
 }
 ```
 
 #### 配置文件位置
 
-- **应用配置**：
-  - macOS: `~/Library/Application Support/switch-cc/config.json`
-  - Windows: `%APPDATA%\switch-cc\config.json`
-  - Linux: `~/.config/switch-cc/config.json`
+- **应用配置**：`~/Library/Application Support/switch-cc/`
+  - `config.json` - 供应商配置
+  - `settings.json` - 应用设置
 
 - **Claude 配置**：`~/.claude/settings.json`
 
@@ -394,14 +368,17 @@ switch-cc/
 - ⚛️ **React 18** - 用户界面库
 - 📘 **TypeScript** - 类型安全的 JavaScript 超集
 - ⚡ **Vite** - 下一代前端构建工具
-- 🎨 **Tailwind CSS 4** - 实用优先的 CSS 框架
+- 🎨 **Tailwind CSS 3** - 实用优先的 CSS 框架
 - 🎯 **Radix UI** - 无样式的高质量 UI 组件
+- 📝 **CodeMirror 6** - 强大的代码编辑器
 
 #### 后端
 - 🦀 **Rust** - 系统级编程语言，内存安全
 - 🖼️ **Tauri 2.8** - 跨平台桌面应用框架
 - 🔧 **serde** - Rust 序列化/反序列化框架
 - 📁 **dirs** - 跨平台目录路径获取
+- 🔄 **Tauri Updater** - 应用自动更新插件
+- 🗂️ **Tauri Dialog** - 系统文件对话框插件
 
 #### 工具链
 - 📦 **pnpm** - 快速、节省磁盘空间的包管理器
@@ -504,22 +481,22 @@ A: 理论上支持所有兼容 Anthropic API 格式的供应商。内置了常�
 <details>
 <summary><strong>Q: 配置文件存储在哪里？</strong></summary>
 
-A: 
-- 应用配置：平台特定的应用数据目录（见"使用说明"章节）
+A:
+- 应用配置：`~/Library/Application Support/switch-cc/`
 - Claude 配置：`~/.claude/settings.json`
 </details>
 
 <details>
 <summary><strong>Q: 如何备份我的配置？</strong></summary>
 
-A: 复制应用配置文件即可：
+A: 可以通过设置界面打开配置文件夹,然后复制整个文件夹:
 ```bash
-# macOS
 cp -r ~/Library/Application\ Support/switch-cc ~/backup/
-
-# Linux
-cp -r ~/.config/switch-cc ~/backup/
 ```
+
+配置文件夹包含:
+- `config.json` - 所有供应商配置
+- `settings.json` - 应用设置
 </details>
 
 ---
@@ -530,12 +507,14 @@ cp -r ~/.config/switch-cc ~/backup/
 - [x] ✅ 系统托盘集成
 - [x] ✅ 预设供应商模板
 - [x] ✅ 深色模式支持
-- [x] ✅ 跨平台构建和发布
+- [x] ✅ macOS 平台构建和发布
+- [x] ✅ 应用设置界面
+- [x] ✅ JSON 配置编辑器（CodeMirror）
+- [x] ✅ 自动更新检查（Tauri Updater）
 - [ ] 🚧 配置导入/导出功能
 - [ ] 🚧 配置备份和恢复
 - [ ] 📅 多语言支持（英文）
 - [ ] 📅 键盘快捷键
-- [ ] 📅 应用内更新检查
 - [ ] 💡 配置模板市场
 
 ---

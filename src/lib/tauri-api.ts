@@ -95,6 +95,11 @@ export class TauriAPI {
     return await invoke("check_for_updates");
   }
 
+  // 获取应用版本
+  async getAppVersion(): Promise<string> {
+    return await invoke("get_app_version");
+  }
+
   // 是否为便携模式
   async isPortableMode(): Promise<boolean> {
     return await invoke("is_portable_mode");
