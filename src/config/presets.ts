@@ -58,8 +58,8 @@ export const validateClaudeConfig = (
     return { valid: false, error: "缺少 env 配置节" };
   }
 
-  if (!config.env.ANTHROPIC_AUTH_TOKEN) {
-    return { valid: false, error: "缺少 ANTHROPIC_AUTH_TOKEN" };
+  if (!config.env.ANTHROPIC_AUTH_TOKEN && !config.env.ANTHROPIC_API_KEY) {
+    return { valid: false, error: "缺少认证配置 (ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY)" };
   }
 
   if (
