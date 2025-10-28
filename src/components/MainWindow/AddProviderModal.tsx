@@ -95,7 +95,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
 
       onAdd(provider);
     } catch (error) {
-      alert("配置格式错误，请检查JSON格式");
+      alert(`配置格式错误，请检查JSON格式, ${error}`);
     }
   };
 
