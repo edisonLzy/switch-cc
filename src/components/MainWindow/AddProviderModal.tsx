@@ -11,10 +11,11 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { JsonEditor } from "../ui/json-editor";
 import { Label } from "../ui/label";
 import { Card, CardContent } from "../ui/card";
 import { Badge } from "../ui/badge";
+import { useDarkMode } from "../../hooks/useDarkMode";
 
 interface AddProviderModalProps {
   onAdd: (provider: Omit<Provider, "id">) => void;
@@ -22,6 +23,7 @@ interface AddProviderModalProps {
 }
 
 function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
+  const { isDarkMode } = useDarkMode();
   const [step, setStep] = useState<"preset" | "custom">("preset");
   const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [formData, setFormData] = useState({
@@ -240,19 +242,16 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                     格式化
                   </Button>
                 </div>
-                <Textarea
-                  id="config"
-                  required
-                  rows={10}
+                <JsonEditor
                   value={formData.customConfig}
-                  onChange={(e) =>
+                  onChange={(value) =>
                     setFormData((prev) => ({
                       ...prev,
-                      customConfig: e.target.value,
+                      customConfig: value,
                     }))
                   }
-                  className={`font-mono text-sm ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-                  placeholder="输入完整的配置 JSON"
+                  isDarkMode={isDarkMode}
+                  className={error ? "ring-2 ring-red-500" : ""}
                 />
                 {error && <p className="text-sm text-red-600">{error}</p>}
               </div>
