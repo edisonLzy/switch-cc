@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Provider } from "../../types";
+import { Provider, ProviderType } from "../../types";
 import { Plus, Wand2 } from "lucide-react";
 import { presetProviders, generateDefaultConfig } from "../../config/presets";
 import {
@@ -24,6 +24,7 @@ interface AddProviderModalProps {
 function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
   const [step, setStep] = useState<"preset" | "custom">("preset");
   const [selectedPreset, setSelectedPreset] = useState<string>("");
+  const [selectedProviderType, setSelectedProviderType] = useState<ProviderType>("claude");
   const [formData, setFormData] = useState({
     name: "",
     websiteUrl: "",
@@ -43,6 +44,7 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
       customConfig: JSON.stringify(preset.settingsConfig, null, 2),
     });
     setSelectedPreset(presetIndex.toString());
+    setSelectedProviderType(preset.providerType || "claude");
   };
 
   const handleCustomConfig = () => {
@@ -50,7 +52,15 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
     setFormData((prev) => ({
       ...prev,
       name: "",
-      customConfig: JSON.stringify(generateDefaultConfig(), null, 2),
+      customConfig: JSON.stringify(generateDefaultConfig(selectedProviderType), null, 2),
+    }));
+  };
+
+  const handleProviderTypeChange = (type: ProviderType) => {
+    setSelectedProviderType(type);
+    setFormData((prev) => ({
+      ...prev,
+      customConfig: JSON.stringify(generateDefaultConfig(type), null, 2),
     }));
   };
 
@@ -70,27 +80,38 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
 
     try {
       let settingsConfig;
+      let providerType: ProviderType = "claude";
 
       if (step === "preset" && selectedPreset) {
         const preset = presetProviders[parseInt(selectedPreset)];
         settingsConfig = { ...preset.settingsConfig };
+        providerType = preset.providerType || "claude";
 
         // 如果有API Key，替换配置中的token
         if (formData.apiKey.trim()) {
-          settingsConfig.env = {
-            ...settingsConfig.env,
-            ANTHROPIC_AUTH_TOKEN: formData.apiKey.trim(),
-          };
+          if (providerType === "codex") {
+            settingsConfig.openai = {
+              ...settingsConfig.openai,
+              api_key: formData.apiKey.trim(),
+            };
+          } else {
+            settingsConfig.env = {
+              ...settingsConfig.env,
+              ANTHROPIC_AUTH_TOKEN: formData.apiKey.trim(),
+            };
+          }
         }
       } else {
         // 自定义配置
         settingsConfig = JSON.parse(formData.customConfig);
+        providerType = selectedProviderType;
       }
 
       const provider: Omit<Provider, "id"> = {
         name: formData.name.trim(),
         settingsConfig,
         websiteUrl: formData.websiteUrl.trim() || undefined,
+        providerType,
       };
 
       onAdd(provider);
@@ -134,13 +155,16 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                         className="sr-only"
                       />
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex items-center gap-2">
                           <h4 className="font-heading text-foreground">
                             {preset.name}
                           </h4>
+                          <Badge variant={preset.providerType === "codex" ? "neutral" : "default"}>
+                            {preset.providerType === "codex" ? "Codex" : "Claude"}
+                          </Badge>
                         </div>
                         {preset.websiteUrl && (
-                          <Badge variant="default">有官网</Badge>
+                          <Badge variant="neutral">官网</Badge>
                         )}
                       </div>
                     </CardContent>
@@ -224,6 +248,34 @@ function AddProviderModal({ onAdd, onClose }: AddProviderModalProps) {
                   }
                   placeholder="https://example.com"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>供应商类型 *</Label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="providerType"
+                      value="claude"
+                      checked={selectedProviderType === "claude"}
+                      onChange={(e) => handleProviderTypeChange(e.target.value as ProviderType)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Claude</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="providerType"
+                      value="codex"
+                      checked={selectedProviderType === "codex"}
+                      onChange={(e) => handleProviderTypeChange(e.target.value as ProviderType)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Codex</span>
+                  </label>
+                </div>
               </div>
 
               <div className="space-y-2">

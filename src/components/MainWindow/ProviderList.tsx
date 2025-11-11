@@ -107,6 +107,9 @@ function ProviderList({
                       <CardTitle className="truncate text-lg">
                         {provider.name}
                       </CardTitle>
+                      <Badge variant={provider.providerType === "codex" ? "neutral" : "default"}>
+                        {provider.providerType === "codex" ? "Codex" : "Claude"}
+                      </Badge>
                       {provider.id === currentProviderId && (
                         <Badge variant="default">当前使用</Badge>
                       )}
