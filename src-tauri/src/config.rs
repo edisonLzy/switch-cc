@@ -1,3 +1,4 @@
+use crate::provider::ProviderType;
 use crate::store::AppConfig;
 use dirs;
 use std::fs;
@@ -41,12 +42,22 @@ pub fn get_claude_config_path() -> Result<PathBuf, String> {
     Ok(claude_dir.join("claude.json"))
 }
 
-/// 检查 Claude 配置是否存在
-pub fn claude_config_exists() -> bool {
-    if let Ok(claude_dir) = get_claude_config_dir() {
-        let settings_path = claude_dir.join("settings.json");
-        let claude_path = claude_dir.join("claude.json");
-        return settings_path.exists() || claude_path.exists();
+/// 获取 Codex 配置目录
+pub fn get_codex_config_dir() -> Result<PathBuf, String> {
+    let home_dir = dirs::home_dir().ok_or("无法获取用户目录")?;
+    Ok(home_dir.join(".codex"))
+}
+
+/// 获取 Codex 配置文件路径
+pub fn get_codex_config_path() -> Result<PathBuf, String> {
+    let codex_dir = get_codex_config_dir()?;
+    Ok(codex_dir.join("config.json"))
+}
+
+/// 检查 Codex 配置是否存在
+pub fn codex_config_exists() -> bool {
+    if let Ok(config_path) = get_codex_config_path() {
+        return config_path.exists();
     }
     false
 }
@@ -169,4 +180,85 @@ pub fn write_claude_config(config: &serde_json::Value) -> Result<(), String> {
     fs::rename(&temp_path, &config_path).map_err(|e| format!("重命名配置文件失败: {}", e))?;
 
     Ok(())
+}
+
+/// 读取 Codex 配置文件
+pub fn read_codex_config() -> Result<serde_json::Value, String> {
+    let config_path = get_codex_config_path()?;
+
+    if !config_path.exists() {
+        return Err("Codex 配置文件不存在".to_string());
+    }
+
+    let content =
+        fs::read_to_string(&config_path).map_err(|e| format!("读取 Codex 配置文件失败: {}", e))?;
+
+    let config: serde_json::Value =
+        serde_json::from_str(&content).map_err(|e| format!("解析 Codex 配置文件失败: {}", e))?;
+
+    Ok(config)
+}
+
+/// 合并 Codex 配置文件 - 只覆盖 provider 中指定的键
+pub fn merge_codex_config(provider_config: &serde_json::Value) -> Result<(), String> {
+    let config_path = get_codex_config_path()?;
+
+    // 读取现有配置，如果不存在则创建默认配置
+    let mut current_config = if config_path.exists() {
+        read_codex_config()?
+    } else {
+        // 创建默认配置
+        serde_json::json!({
+            "openai": {
+                "api_key": ""
+            }
+        })
+    };
+
+    // 递归合并配置
+    merge_json_objects(&mut current_config, provider_config);
+
+    // 写入合并后的配置
+    write_codex_config(&current_config)?;
+
+    Ok(())
+}
+
+/// 写入 Codex 配置文件
+pub fn write_codex_config(config: &serde_json::Value) -> Result<(), String> {
+    let config_path = get_codex_config_path()?;
+
+    // 确保父目录存在
+    if let Some(parent) = config_path.parent() {
+        if !parent.exists() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建 Codex 配置目录失败: {}", e))?;
+        }
+    }
+
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("序列化 Codex 配置失败: {}", e))?;
+
+    // 原子写入：先写到临时文件，然后重命名
+    let temp_path = config_path.with_extension("tmp");
+    fs::write(&temp_path, content).map_err(|e| format!("写入临时文件失败: {}", e))?;
+
+    fs::rename(&temp_path, &config_path).map_err(|e| format!("重命名配置文件失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 读取配置文件 - 根据供应商类型
+pub fn read_provider_config(provider_type: &ProviderType) -> Result<serde_json::Value, String> {
+    match provider_type {
+        ProviderType::Claude => read_claude_config(),
+        ProviderType::Codex => read_codex_config(),
+    }
+}
+
+/// 合并配置文件 - 根据供应商类型
+pub fn merge_provider_config(provider_type: &ProviderType, provider_config: &serde_json::Value) -> Result<(), String> {
+    match provider_type {
+        ProviderType::Claude => merge_claude_config(provider_config),
+        ProviderType::Codex => merge_codex_config(provider_config),
+    }
 }

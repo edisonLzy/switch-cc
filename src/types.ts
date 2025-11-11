@@ -1,9 +1,12 @@
+export type ProviderType = "claude" | "codex";
+
 export interface Provider {
   id: string;
   name: string;
-  settingsConfig: Record<string, any>; // Claude settings.json 配置对象
+  settingsConfig: Record<string, any>; // Claude/Codex settings 配置对象
   websiteUrl?: string;
   createdAt?: number; // 添加时间戳（毫秒）
+  providerType?: ProviderType; // 供应商类型，默认为 "claude"
 }
 
 export interface AppConfig {
