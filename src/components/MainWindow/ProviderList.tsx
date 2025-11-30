@@ -60,7 +60,9 @@ function ProviderList({
 
   // 重置选中索引当过滤结果改变时
   useEffect(() => {
-    setSelectedIndex(0);
+    if (filteredProviders.length > 0) {
+      setSelectedIndex(0);
+    }
   }, [filteredProviders.length]);
 
   // 全局键盘事件监听
