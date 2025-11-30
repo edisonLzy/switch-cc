@@ -1,5 +1,12 @@
 import { Provider } from "../../types";
-import { Trash2, Edit, Play, ExternalLink, Search } from "lucide-react";
+import {
+  Trash2,
+  Edit,
+  Play,
+  ExternalLink,
+  Search,
+  Terminal,
+} from "lucide-react";
 import { formatTimestamp } from "../../utils/errorUtils";
 import { Button } from "../ui/button";
 import { Card, CardHeader, CardTitle } from "../ui/card";
@@ -22,9 +29,20 @@ function ProviderList({
   onSwitch,
   onDelete,
   onEdit,
+  onNotify,
 }: ProviderListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const providerList = Object.values(providers);
+
+  // 启动 Claude Code
+  const handleLaunch = async (providerId: string) => {
+    try {
+      await window.api.launchClaudeWithProvider(providerId);
+      onNotify("Claude Code 已启动", "success");
+    } catch (error) {
+      onNotify(`启动失败: ${error}`, "error");
+    }
+  };
 
   // 过滤供应商列表
   const filteredProviders = useMemo(() => {
@@ -148,6 +166,18 @@ function ProviderList({
                         切换
                       </Button>
                     )}
+
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleLaunch(provider.id);
+                      }}
+                      variant="neutral"
+                      size="icon"
+                      title="启动 Claude Code"
+                    >
+                      <Terminal size={16} />
+                    </Button>
 
                     <Button
                       onClick={(e) => {

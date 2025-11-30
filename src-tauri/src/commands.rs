@@ -461,3 +461,143 @@ pub async fn hide_menubar(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn launch_claude_with_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
+
+    let provider = config
+        .providers
+        .get(&provider_id)
+        .ok_or("供应商不存在")?
+        .clone();
+
+    drop(config);
+
+    // 提取环境变量
+    let env_obj = provider
+        .settings_config
+        .get("env")
+        .ok_or("缺少 env 配置节")?;
+
+    let env_map = env_obj.as_object().ok_or("env 必须是一个对象")?;
+
+    // 验证并收集环境变量（仅允许安全的键名）
+    let mut safe_env_vars = Vec::new();
+    for (key, value) in env_map {
+        // 只允许以字母开头，包含字母、数字和下划线的键名
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || !key.starts_with(|c: char| c.is_ascii_alphabetic())
+        {
+            return Err(format!("Invalid environment variable name: {}", key));
+        }
+
+        if let Some(val_str) = value.as_str() {
+            safe_env_vars.push((key.clone(), val_str.to_string()));
+        }
+    }
+
+    // 根据不同平台启动终端并运行 claude
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: 使用 osascript 启动 Terminal.app
+        // 使用单引号包裹值以防止shell注入，并转义单引号
+        let env_exports = safe_env_vars
+            .iter()
+            .map(|(key, val)| {
+                let escaped_val = val.replace("'", "'\\''");
+                format!("export {}='{}'", key, escaped_val)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let script = format!(
+            "tell application \"Terminal\"\n\
+             activate\n\
+             do script \"{} && claude\"\n\
+             end tell",
+            env_exports.replace("\"", "\\\"")
+        );
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("启动终端失败: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: 直接使用环境变量而不是通过 set 命令
+        // 这样可以避免 shell 注入问题
+
+        // 尝试使用 Windows Terminal，如果失败则回退到 cmd
+        let mut wt_cmd = std::process::Command::new("wt.exe");
+        wt_cmd.arg("cmd").arg("/k").arg("claude");
+        for (key, val) in &safe_env_vars {
+            wt_cmd.env(key, val);
+        }
+
+        match wt_cmd.spawn() {
+            Ok(_) => {
+                // Windows Terminal 启动成功，直接返回
+            }
+            Err(_) => {
+                // 回退到普通 cmd
+                let mut cmd = std::process::Command::new("cmd");
+                cmd.arg("/k").arg("claude");
+                for (key, val) in &safe_env_vars {
+                    cmd.env(key, val);
+                }
+                cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: 使用 bash -c 并使用单引号包裹值以防止 shell 注入
+        let env_exports = safe_env_vars
+            .iter()
+            .map(|(key, val)| {
+                let escaped_val = val.replace("'", "'\\''");
+                format!("export {}='{}'", key, escaped_val)
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let command = format!("{} && claude", env_exports);
+
+        // 尝试常见的 Linux 终端
+        let terminals = vec![
+            ("gnome-terminal", vec!["--", "bash", "-c", &command]),
+            ("konsole", vec!["-e", "bash", "-c", &command]),
+            ("xterm", vec!["-e", "bash", "-c", &command]),
+            ("x-terminal-emulator", vec!["-e", "bash", "-c", &command]),
+        ];
+
+        let mut launched = false;
+        for (terminal, args) in terminals {
+            if std::process::Command::new(terminal)
+                .args(&args)
+                .spawn()
+                .is_ok()
+            {
+                launched = true;
+                break;
+            }
+        }
+
+        if !launched {
+            return Err("无法找到可用的终端模拟器".to_string());
+        }
+    }
+
+    Ok(())
+}
