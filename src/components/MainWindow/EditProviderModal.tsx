@@ -10,9 +10,10 @@ import {
 } from "../ui/dialog";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Textarea } from "../ui/textarea";
+import { JsonEditor } from "../ui/json-editor";
 import { Label } from "../ui/label";
 import { Badge } from "../ui/badge";
+import { useDarkMode } from "../../hooks/useDarkMode";
 
 interface EditProviderModalProps {
   provider: Provider;
@@ -25,6 +26,7 @@ function EditProviderModal({
   onSave,
   onClose,
 }: EditProviderModalProps) {
+  const { isDarkMode } = useDarkMode();
   const [formData, setFormData] = useState({
     name: provider.name,
     websiteUrl: provider.websiteUrl || "",
@@ -121,18 +123,16 @@ function EditProviderModal({
                   格式化
                 </Button>
               </div>
-              <Textarea
-                id="edit-config"
-                required
-                rows={12}
+              <JsonEditor
                 value={formData.configJson}
-                onChange={(e) =>
+                onChange={(value) =>
                   setFormData((prev) => ({
                     ...prev,
-                    configJson: e.target.value,
+                    configJson: value,
                   }))
                 }
-                className={`font-mono text-sm ${error ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                isDarkMode={isDarkMode}
+                className={error ? "ring-2 ring-red-500" : ""}
               />
               {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
