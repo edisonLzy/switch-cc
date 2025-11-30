@@ -461,3 +461,125 @@ pub async fn hide_menubar(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn launch_claude_with_provider(
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<(), String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
+
+    let provider = config
+        .providers
+        .get(&provider_id)
+        .ok_or("供应商不存在")?
+        .clone();
+
+    drop(config);
+
+    // 提取环境变量
+    let env_obj = provider
+        .settings_config
+        .get("env")
+        .ok_or("缺少 env 配置节")?;
+
+    let env_map = env_obj.as_object().ok_or("env 必须是一个对象")?;
+
+    // 构建环境变量字符串用于在终端中设置
+    let mut env_vars = Vec::new();
+    for (key, value) in env_map {
+        if let Some(val_str) = value.as_str() {
+            env_vars.push(format!("{}={}", key, val_str));
+        }
+    }
+
+    // 根据不同平台启动终端并运行 claude
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: 使用 osascript 启动 Terminal.app
+        let env_exports = env_vars
+            .iter()
+            .map(|var| format!("export {}", var))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let script = format!(
+            "tell application \"Terminal\"\n\
+             activate\n\
+             do script \"{} && claude\"\n\
+             end tell",
+            env_exports
+        );
+
+        std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn()
+            .map_err(|e| format!("启动终端失败: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: 使用 cmd.exe 或尝试 Windows Terminal
+        let env_sets = env_vars
+            .iter()
+            .map(|var| format!("set {}", var))
+            .collect::<Vec<_>>()
+            .join(" && ");
+
+        let command = format!("{} && claude", env_sets);
+
+        // 尝试使用 Windows Terminal，如果失败则回退到 cmd
+        let result = std::process::Command::new("wt.exe")
+            .arg("cmd")
+            .arg("/k")
+            .arg(&command)
+            .spawn();
+
+        if result.is_err() {
+            // 回退到普通 cmd
+            std::process::Command::new("cmd")
+                .arg("/k")
+                .arg(&command)
+                .spawn()
+                .map_err(|e| format!("启动终端失败: {}", e))?;
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: 尝试多个常见终端模拟器
+        let env_exports = env_vars
+            .iter()
+            .map(|var| format!("export {}", var))
+            .collect::<Vec<_>>()
+            .join("; ");
+
+        let command = format!("{} && claude", env_exports);
+
+        // 尝试常见的 Linux 终端
+        let terminals = vec![
+            ("gnome-terminal", vec!["--", "bash", "-c", &command]),
+            ("konsole", vec!["-e", "bash", "-c", &command]),
+            ("xterm", vec!["-e", "bash", "-c", &command]),
+            ("x-terminal-emulator", vec!["-e", "bash", "-c", &command]),
+        ];
+
+        let mut launched = false;
+        for (terminal, args) in terminals {
+            if let Ok(_) = std::process::Command::new(terminal).args(&args).spawn() {
+                launched = true;
+                break;
+            }
+        }
+
+        if !launched {
+            return Err("无法找到可用的终端模拟器".to_string());
+        }
+    }
+
+    Ok(())
+}

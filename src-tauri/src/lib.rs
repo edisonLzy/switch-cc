@@ -273,6 +273,7 @@ pub fn run() {
             commands::get_app_mode,
             commands::show_menubar,
             commands::hide_menubar,
+            commands::launch_claude_with_provider,
             update_tray_menu,
         ]);
 

@@ -130,6 +130,11 @@ export class TauriAPI {
     return await invoke("hide_menubar");
   }
 
+  // 使用指定 provider 启动 Claude Code
+  async launchClaudeWithProvider(providerId: string): Promise<void> {
+    return await invoke("launch_claude_with_provider", { providerId });
+  }
+
   // 监听供应商切换事件
   async onProviderSwitched(callback: (data: { providerId: string }) => void) {
     return await listen("provider-switched", (event) => {
