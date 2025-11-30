@@ -536,13 +536,6 @@ pub async fn launch_claude_with_provider(
     {
         // Windows: 直接使用环境变量而不是通过 set 命令
         // 这样可以避免 shell 注入问题
-        let mut cmd = std::process::Command::new("cmd");
-        cmd.arg("/k").arg("claude");
-
-        // 直接设置环境变量
-        for (key, val) in &safe_env_vars {
-            cmd.env(key, val);
-        }
 
         // 尝试使用 Windows Terminal，如果失败则回退到 cmd
         let mut wt_cmd = std::process::Command::new("wt.exe");
@@ -551,11 +544,19 @@ pub async fn launch_claude_with_provider(
             wt_cmd.env(key, val);
         }
 
-        let result = wt_cmd.spawn();
-
-        if result.is_err() {
-            // 回退到普通 cmd
-            cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+        match wt_cmd.spawn() {
+            Ok(_) => {
+                // Windows Terminal 启动成功，直接返回
+            }
+            Err(_) => {
+                // 回退到普通 cmd
+                let mut cmd = std::process::Command::new("cmd");
+                cmd.arg("/k").arg("claude");
+                for (key, val) in &safe_env_vars {
+                    cmd.env(key, val);
+                }
+                cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
+            }
         }
     }
 
@@ -583,7 +584,11 @@ pub async fn launch_claude_with_provider(
 
         let mut launched = false;
         for (terminal, args) in terminals {
-            if let Ok(_) = std::process::Command::new(terminal).args(&args).spawn() {
+            if std::process::Command::new(terminal)
+                .args(&args)
+                .spawn()
+                .is_ok()
+            {
                 launched = true;
                 break;
             }
