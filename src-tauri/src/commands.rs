@@ -488,11 +488,18 @@ pub async fn launch_claude_with_provider(
 
     let env_map = env_obj.as_object().ok_or("env 必须是一个对象")?;
 
-    // 构建环境变量字符串用于在终端中设置
-    let mut env_vars = Vec::new();
+    // 验证并收集环境变量（仅允许安全的键名）
+    let mut safe_env_vars = Vec::new();
     for (key, value) in env_map {
+        // 只允许以字母开头，包含字母、数字和下划线的键名
+        if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            || !key.starts_with(|c: char| c.is_ascii_alphabetic())
+        {
+            return Err(format!("Invalid environment variable name: {}", key));
+        }
+
         if let Some(val_str) = value.as_str() {
-            env_vars.push(format!("{}={}", key, val_str));
+            safe_env_vars.push((key.clone(), val_str.to_string()));
         }
     }
 
@@ -500,9 +507,13 @@ pub async fn launch_claude_with_provider(
     #[cfg(target_os = "macos")]
     {
         // macOS: 使用 osascript 启动 Terminal.app
-        let env_exports = env_vars
+        // 使用单引号包裹值以防止shell注入，并转义单引号
+        let env_exports = safe_env_vars
             .iter()
-            .map(|var| format!("export {}", var))
+            .map(|(key, val)| {
+                let escaped_val = val.replace("'", "'\\''");
+                format!("export {}='{}'", key, escaped_val)
+            })
             .collect::<Vec<_>>()
             .join("; ");
 
@@ -511,7 +522,7 @@ pub async fn launch_claude_with_provider(
              activate\n\
              do script \"{} && claude\"\n\
              end tell",
-            env_exports
+            env_exports.replace("\"", "\\\"")
         );
 
         std::process::Command::new("osascript")
@@ -523,38 +534,40 @@ pub async fn launch_claude_with_provider(
 
     #[cfg(target_os = "windows")]
     {
-        // Windows: 使用 cmd.exe 或尝试 Windows Terminal
-        let env_sets = env_vars
-            .iter()
-            .map(|var| format!("set {}", var))
-            .collect::<Vec<_>>()
-            .join(" && ");
+        // Windows: 直接使用环境变量而不是通过 set 命令
+        // 这样可以避免 shell 注入问题
+        let mut cmd = std::process::Command::new("cmd");
+        cmd.arg("/k").arg("claude");
 
-        let command = format!("{} && claude", env_sets);
+        // 直接设置环境变量
+        for (key, val) in &safe_env_vars {
+            cmd.env(key, val);
+        }
 
         // 尝试使用 Windows Terminal，如果失败则回退到 cmd
-        let result = std::process::Command::new("wt.exe")
-            .arg("cmd")
-            .arg("/k")
-            .arg(&command)
-            .spawn();
+        let mut wt_cmd = std::process::Command::new("wt.exe");
+        wt_cmd.arg("cmd").arg("/k").arg("claude");
+        for (key, val) in &safe_env_vars {
+            wt_cmd.env(key, val);
+        }
+
+        let result = wt_cmd.spawn();
 
         if result.is_err() {
             // 回退到普通 cmd
-            std::process::Command::new("cmd")
-                .arg("/k")
-                .arg(&command)
-                .spawn()
-                .map_err(|e| format!("启动终端失败: {}", e))?;
+            cmd.spawn().map_err(|e| format!("启动终端失败: {}", e))?;
         }
     }
 
     #[cfg(target_os = "linux")]
     {
-        // Linux: 尝试多个常见终端模拟器
-        let env_exports = env_vars
+        // Linux: 使用 bash -c 并使用单引号包裹值以防止 shell 注入
+        let env_exports = safe_env_vars
             .iter()
-            .map(|var| format!("export {}", var))
+            .map(|(key, val)| {
+                let escaped_val = val.replace("'", "'\\''");
+                format!("export {}='{}'", key, escaped_val)
+            })
             .collect::<Vec<_>>()
             .join("; ");
 
