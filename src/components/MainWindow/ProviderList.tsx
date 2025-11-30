@@ -12,7 +12,7 @@ import { Button } from "../ui/button";
 import { Card, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -32,6 +32,8 @@ function ProviderList({
   onNotify,
 }: ProviderListProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const providerList = Object.values(providers);
 
   // 启动 Claude Code
@@ -55,6 +57,45 @@ function ProviderList({
       provider.name.toLowerCase().includes(term),
     );
   }, [providerList, searchTerm]);
+
+  // 重置选中索引当过滤结果改变时
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [filteredProviders.length]);
+
+  // 全局键盘事件监听
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // "/" 键聚焦搜索框
+      if (e.key === "/" && document.activeElement !== searchInputRef.current) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      // 当搜索框没有焦点时，处理方向键
+      if (document.activeElement !== searchInputRef.current) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSelectedIndex((prev) =>
+            prev < filteredProviders.length - 1 ? prev + 1 : prev,
+          );
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+        } else if (e.key === "Enter" && filteredProviders.length > 0) {
+          e.preventDefault();
+          const selectedProvider = filteredProviders[selectedIndex];
+          if (selectedProvider && selectedProvider.id !== currentProviderId) {
+            onSwitch(selectedProvider.id);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [filteredProviders, selectedIndex, currentProviderId, onSwitch]);
 
   if (providerList.length === 0) {
     return (
@@ -82,6 +123,7 @@ function ProviderList({
             className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground opacity-50"
           />
           <Input
+            ref={searchInputRef}
             type="text"
             placeholder="搜索供应商..."
             value={searchTerm}
@@ -109,13 +151,15 @@ function ProviderList({
         </div>
       ) : (
         <div className="grid gap-6">
-          {filteredProviders.map((provider) => (
+          {filteredProviders.map((provider, index) => (
             <Card
               key={provider.id}
               className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
                 provider.id === currentProviderId
                   ? "ring-4 ring-main"
-                  : "hover:ring-2 hover:ring-border"
+                  : index === selectedIndex
+                    ? "ring-2 ring-blue-500"
+                    : "hover:ring-2 hover:ring-border"
               }`}
             >
               <CardHeader className="p-4">

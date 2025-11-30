@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Provider } from "../../types";
 import { Settings, Monitor, Check, ChevronRight } from "lucide-react";
 import { Button } from "../ui/button";
@@ -10,11 +10,51 @@ function MenuBarWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [currentProviderId, setCurrentProviderId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const providerRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     loadProviders();
     setupEventListeners();
   }, []);
+
+  // 键盘导航
+  useEffect(() => {
+    const providersList = Object.values(providers);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (providersList.length === 0) return;
+
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSelectedIndex((prev) =>
+          prev < providersList.length - 1 ? prev + 1 : prev,
+        );
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const selectedProvider = providersList[selectedIndex];
+        if (selectedProvider && selectedProvider.id !== currentProviderId) {
+          handleSwitchProvider(selectedProvider.id);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [providers, selectedIndex, currentProviderId]);
+
+  // 滚动到选中的项目
+  useEffect(() => {
+    if (providerRefs.current[selectedIndex]) {
+      providerRefs.current[selectedIndex]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [selectedIndex]);
 
   const loadProviders = async () => {
     try {
@@ -159,15 +199,20 @@ function MenuBarWindow() {
           </div>
         ) : (
           <div className="py-2">
-            {providersList.map((provider) => (
+            {providersList.map((provider, index) => (
               <Button
                 key={provider.id}
+                ref={(el) => {
+                  providerRefs.current[index] = el;
+                }}
                 onClick={() => handleSwitchProvider(provider.id)}
                 variant="ghost"
                 className={`w-full px-4 py-3 h-auto justify-start hover:bg-secondary-background hover:shadow-shadow hover:border-border rounded-none border-2 border-transparent group transition-all duration-200 ${
                   provider.id === currentProviderId
                     ? "bg-main/20 border-main"
-                    : ""
+                    : index === selectedIndex
+                      ? "bg-blue-100 dark:bg-blue-900/30 border-blue-500"
+                      : ""
                 }`}
               >
                 <div className="flex items-center justify-between w-full">
