@@ -26,14 +26,16 @@ cargo test                 # Run Rust tests
 
 ## Architecture Overview
 
-Switch CC is a dual-mode desktop application built with Tauri 2.8 + React 18, designed specifically for managing Claude Code configurations.
+Switch CC is a dual-mode desktop application built with Tauri 2.8 + React 18, designed for managing both Claude Code and Codex configurations.
 
 ### Core Architecture
 
 - **Frontend**: React 18 + TypeScript + Tailwind CSS 4
 - **Backend**: Rust + Tauri 2.8 with system tray integration
 - **Build System**: Vite + pnpm
-- **Configuration Target**: `~/.claude/settings.json` (Claude Code config)
+- **Configuration Targets**: 
+  - `~/.claude/settings.json` (Claude Code config)
+  - `~/.codex/config.json` (Codex config)
 
 ### Dual Interface Pattern
 
@@ -49,7 +51,7 @@ Mode switching is handled by the `AppMode` enum in Rust and controlled via Tauri
 #### Frontend Structure
 - `src/components/MainWindow/`: Complete provider management UI
 - `src/components/MenuBar/`: Compact switching interface
-- `src/config/presets.ts`: Predefined provider templates (Claude Official, Alibaba Bailian, Zhipu AI, OpenRouter, Together AI)
+- `src/config/presets.ts`: Predefined provider templates (Claude: Zhipu AI, AnyRouter, PackyCode; Codex: OpenAI, Azure OpenAI)
 - `src/lib/tauri-api.ts`: Centralized Tauri command wrapper
 - `src/types.ts`: Core TypeScript interfaces
 
@@ -67,7 +69,9 @@ Mode switching is handled by the `AppMode` enum in Rust and controlled via Tauri
   - **macOS**: `~/Library/Application Support/switch-cc/config.json`
   - **Windows**: `%APPDATA%\switch-cc\config.json`
   - **Linux**: `~/.config/switch-cc/config.json`
-- **Target Config**: `~/.claude/settings.json` - Claude Code configuration that gets modified
+- **Target Configs**: 
+  - Claude: `~/.claude/settings.json` - Claude Code configuration
+  - Codex: `~/.codex/config.json` - Codex configuration
 - **Atomic Writes**: All config operations use atomic write patterns to prevent corruption
 
 ### System Integration Features
@@ -84,12 +88,17 @@ Providers are defined with the interface:
 interface Provider {
   id: string;
   name: string;
-  settingsConfig: Record<string, any>; // Maps to Claude settings.json
+  settingsConfig: Record<string, any>; // Maps to Claude/Codex config files
   websiteUrl?: string;
+  providerType?: ProviderType; // "claude" | "codex"
   category?: ProviderCategory;
   createdAt?: number;
 }
 ```
+
+Provider types:
+- **Claude**: Uses `env.ANTHROPIC_AUTH_TOKEN` and `env.ANTHROPIC_BASE_URL`
+- **Codex**: Uses `openai.api_key`, `openai.organization_id`, `openai.api_base`
 
 Categories include: `official`, `cn_official`, `aggregator`, `third_party`, `custom`.
 

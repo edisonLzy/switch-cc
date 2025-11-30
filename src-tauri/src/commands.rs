@@ -65,7 +65,7 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
         return Err("供应商不存在".to_string());
     }
 
-    // 如果更新的是当前供应商，同时更新Claude配置
+    // 如果更新的是当前供应商，同时更新对应类型的配置文件
     let is_current = config.current == provider.id;
 
     config
@@ -73,8 +73,8 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
         .insert(provider.id.clone(), provider.clone());
 
     if is_current {
-        // 合并Claude配置文件（只覆盖provider中指定的键）
-        config::merge_claude_config(&provider.settings_config)?;
+        // 根据供应商类型合并配置文件（只覆盖provider中指定的键）
+        config::merge_provider_config(&provider.provider_type, &provider.settings_config)?;
     }
 
     drop(config);
@@ -125,8 +125,8 @@ pub async fn switch_provider(
         .ok_or("供应商不存在")?
         .clone();
 
-    // 合并Claude配置文件（只覆盖provider中指定的键）
-    config::merge_claude_config(&provider.settings_config)?;
+    // 根据供应商类型合并配置文件（只覆盖provider中指定的键）
+    config::merge_provider_config(&provider.provider_type, &provider.settings_config)?;
 
     // 更新当前供应商
     config.current = provider_id.clone();
@@ -158,6 +158,8 @@ pub async fn switch_provider(
 pub async fn import_current_config_as_default(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
+    use crate::provider::ProviderType;
+    
     // 尝试读取现有的Claude配置
     let claude_config = match config::read_claude_config() {
         Ok(config) => config,
@@ -176,6 +178,7 @@ pub async fn import_current_config_as_default(
         claude_config,
         None,
         Some("custom".to_string()),
+        ProviderType::Claude,
     );
 
     let mut config = state
