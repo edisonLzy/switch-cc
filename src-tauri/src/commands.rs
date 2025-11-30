@@ -480,6 +480,9 @@ pub async fn launch_claude_with_provider(
 
     drop(config);
 
+    // 更新 Claude 配置文件以使用指定的 provider
+    config::merge_claude_config(&provider.settings_config)?;
+
     // 提取环境变量
     let env_obj = provider
         .settings_config
