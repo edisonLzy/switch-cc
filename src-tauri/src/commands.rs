@@ -480,6 +480,10 @@ pub async fn launch_claude_with_provider(
 
     drop(config);
 
+    // 将配置序列化为 JSON 字符串供 claude --settings 使用
+    let settings_json = serde_json::to_string(&provider.settings_config)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+
     // 提取环境变量
     let env_obj = provider
         .settings_config
@@ -517,12 +521,15 @@ pub async fn launch_claude_with_provider(
             .collect::<Vec<_>>()
             .join("; ");
 
+        // 转义 JSON 字符串：先转义单引号（用于 shell），再在 format! 中转义双引号（用于 AppleScript）
+        let escaped_settings_json = settings_json.replace("'", "'\\''");
         let script = format!(
             "tell application \"Terminal\"\n\
              activate\n\
-             do script \"{} && claude\"\n\
+             do script \"{} && claude --settings '{}'\"\n\
              end tell",
-            env_exports.replace("\"", "\\\"")
+            env_exports.replace("\"", "\\\""),
+            escaped_settings_json.replace("\"", "\\\"")
         );
 
         std::process::Command::new("osascript")
@@ -537,9 +544,13 @@ pub async fn launch_claude_with_provider(
         // Windows: 直接使用环境变量而不是通过 set 命令
         // 这样可以避免 shell 注入问题
 
+        // 在 Windows 中，JSON 字符串需要用双引号包裹，内部的双引号需要转义
+        let escaped_settings_json = settings_json.replace("\"", "\\\"");
+        let claude_cmd = format!("claude --settings \"{}\"", escaped_settings_json);
+
         // 尝试使用 Windows Terminal，如果失败则回退到 cmd
         let mut wt_cmd = std::process::Command::new("wt.exe");
-        wt_cmd.arg("cmd").arg("/k").arg("claude");
+        wt_cmd.arg("cmd").arg("/k").arg(&claude_cmd);
         for (key, val) in &safe_env_vars {
             wt_cmd.env(key, val);
         }
@@ -551,7 +562,7 @@ pub async fn launch_claude_with_provider(
             Err(_) => {
                 // 回退到普通 cmd
                 let mut cmd = std::process::Command::new("cmd");
-                cmd.arg("/k").arg("claude");
+                cmd.arg("/k").arg(&claude_cmd);
                 for (key, val) in &safe_env_vars {
                     cmd.env(key, val);
                 }
@@ -572,7 +583,12 @@ pub async fn launch_claude_with_provider(
             .collect::<Vec<_>>()
             .join("; ");
 
-        let command = format!("{} && claude", env_exports);
+        // 转义 JSON 字符串中的单引号以在 bash 中安全使用
+        let escaped_settings_json = settings_json.replace("'", "'\\''");
+        let command = format!(
+            "{} && claude --settings '{}'",
+            env_exports, escaped_settings_json
+        );
 
         // 尝试常见的 Linux 终端
         let terminals = vec![
