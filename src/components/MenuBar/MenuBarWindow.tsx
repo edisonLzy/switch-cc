@@ -5,6 +5,8 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { api } from "../../lib/tauri-api";
+import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 
 function MenuBarWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
@@ -18,43 +20,23 @@ function MenuBarWindow() {
     setupEventListeners();
   }, []);
 
-  // 键盘导航
-  useEffect(() => {
-    const providersList = Object.values(providers);
+  const providersList = Object.values(providers);
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (providersList.length === 0) return;
+  // 使用键盘导航 hook
+  useKeyboardNavigation({
+    items: providersList,
+    selectedIndex,
+    setSelectedIndex,
+    onSelect: (provider) => handleSwitchProvider(provider.id),
+    currentItemId: currentProviderId,
+    getItemId: (provider) => provider.id,
+  });
 
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSelectedIndex((prev) =>
-          prev < providersList.length - 1 ? prev + 1 : prev,
-        );
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        const selectedProvider = providersList[selectedIndex];
-        if (selectedProvider && selectedProvider.id !== currentProviderId) {
-          handleSwitchProvider(selectedProvider.id);
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [providers, selectedIndex, currentProviderId]);
-
-  // 滚动到选中的项目
-  useEffect(() => {
-    if (providerRefs.current[selectedIndex]) {
-      providerRefs.current[selectedIndex]?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-      });
-    }
-  }, [selectedIndex]);
+  // 使用自动滚动 hook
+  useAutoScroll({
+    selectedIndex,
+    itemRefs: providerRefs,
+  });
 
   const loadProviders = async () => {
     try {
@@ -127,7 +109,6 @@ function MenuBarWindow() {
     );
   }
 
-  const providersList = Object.values(providers);
   const currentProvider = providers[currentProviderId];
 
   return (

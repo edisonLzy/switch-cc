@@ -13,6 +13,7 @@ import { Card, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useState, useMemo, useRef, useEffect } from "react";
+import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -65,39 +66,17 @@ function ProviderList({
     }
   }, [filteredProviders.length]);
 
-  // 全局键盘事件监听
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // "/" 键聚焦搜索框
-      if (e.key === "/" && document.activeElement !== searchInputRef.current) {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
-
-      // 当搜索框没有焦点时，处理方向键
-      if (document.activeElement !== searchInputRef.current) {
-        if (e.key === "ArrowDown") {
-          e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < filteredProviders.length - 1 ? prev + 1 : prev,
-          );
-        } else if (e.key === "ArrowUp") {
-          e.preventDefault();
-          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : prev));
-        } else if (e.key === "Enter" && filteredProviders.length > 0) {
-          e.preventDefault();
-          const selectedProvider = filteredProviders[selectedIndex];
-          if (selectedProvider && selectedProvider.id !== currentProviderId) {
-            onSwitch(selectedProvider.id);
-          }
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [filteredProviders, selectedIndex, currentProviderId, onSwitch]);
+  // 使用键盘导航 hook
+  useKeyboardNavigation({
+    items: filteredProviders,
+    selectedIndex,
+    setSelectedIndex,
+    onSelect: (provider) => onSwitch(provider.id),
+    currentItemId: currentProviderId,
+    getItemId: (provider) => provider.id,
+    searchInputRef,
+    enableSlashKey: true,
+  });
 
   if (providerList.length === 0) {
     return (
