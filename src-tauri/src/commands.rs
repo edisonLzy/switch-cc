@@ -482,10 +482,7 @@ pub async fn launch_claude_with_provider(
 
     // 创建临时配置文件供 claude --settings 使用
     // 使用 UUID 确保文件名安全且唯一
-    let temp_file_name = format!(
-        "claude_settings_{}.json",
-        uuid::Uuid::new_v4().to_string().replace("-", "")
-    );
+    let temp_file_name = format!("claude_settings_{}.json", uuid::Uuid::new_v4().simple());
     let temp_settings_path = std::env::temp_dir().join(temp_file_name);
     let settings_content = serde_json::to_string_pretty(&provider.settings_config)
         .map_err(|e| format!("序列化配置失败: {}", e))?;
