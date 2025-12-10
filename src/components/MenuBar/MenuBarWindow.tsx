@@ -1,20 +1,42 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Provider } from "../../types";
 import { Settings, Monitor, Check, ChevronRight } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { api } from "../../lib/tauri-api";
+import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
+import { useAutoScroll } from "../../hooks/useAutoScroll";
 
 function MenuBarWindow() {
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [currentProviderId, setCurrentProviderId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const providerRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     loadProviders();
     setupEventListeners();
   }, []);
+
+  const providersList = Object.values(providers);
+
+  // 使用键盘导航 hook
+  useKeyboardNavigation({
+    items: providersList,
+    selectedIndex,
+    setSelectedIndex,
+    onSelect: (provider) => handleSwitchProvider(provider.id),
+    currentItemId: currentProviderId,
+    getItemId: (provider) => provider.id,
+  });
+
+  // 使用自动滚动 hook
+  useAutoScroll({
+    selectedIndex,
+    itemRefs: providerRefs,
+  });
 
   const loadProviders = async () => {
     try {
@@ -87,7 +109,6 @@ function MenuBarWindow() {
     );
   }
 
-  const providersList = Object.values(providers);
   const currentProvider = providers[currentProviderId];
 
   return (
@@ -159,15 +180,20 @@ function MenuBarWindow() {
           </div>
         ) : (
           <div className="py-2">
-            {providersList.map((provider) => (
+            {providersList.map((provider, index) => (
               <Button
                 key={provider.id}
+                ref={(el) => {
+                  providerRefs.current[index] = el;
+                }}
                 onClick={() => handleSwitchProvider(provider.id)}
                 variant="ghost"
                 className={`w-full px-4 py-3 h-auto justify-start hover:bg-secondary-background hover:shadow-shadow hover:border-border rounded-none border-2 border-transparent group transition-all duration-200 ${
                   provider.id === currentProviderId
                     ? "bg-main/20 border-main"
-                    : ""
+                    : index === selectedIndex
+                      ? "bg-blue-100 dark:bg-blue-900/30 border-blue-500"
+                      : ""
                 }`}
               >
                 <div className="flex items-center justify-between w-full">

@@ -12,7 +12,8 @@ import { Button } from "../ui/button";
 import { Card, CardHeader, CardTitle } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
+import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -32,6 +33,8 @@ function ProviderList({
   onNotify,
 }: ProviderListProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const providerList = Object.values(providers);
 
   // 启动 Claude Code
@@ -55,6 +58,25 @@ function ProviderList({
       provider.name.toLowerCase().includes(term),
     );
   }, [providerList, searchTerm]);
+
+  // 重置选中索引当过滤结果改变时
+  useEffect(() => {
+    if (filteredProviders.length > 0) {
+      setSelectedIndex(0);
+    }
+  }, [filteredProviders.length]);
+
+  // 使用键盘导航 hook
+  useKeyboardNavigation({
+    items: filteredProviders,
+    selectedIndex,
+    setSelectedIndex,
+    onSelect: (provider) => onSwitch(provider.id),
+    currentItemId: currentProviderId,
+    getItemId: (provider) => provider.id,
+    searchInputRef,
+    enableSlashKey: true,
+  });
 
   if (providerList.length === 0) {
     return (
@@ -82,6 +104,7 @@ function ProviderList({
             className="absolute left-3 top-1/2 transform -translate-y-1/2 text-foreground opacity-50"
           />
           <Input
+            ref={searchInputRef}
             type="text"
             placeholder="搜索供应商..."
             value={searchTerm}
@@ -109,13 +132,15 @@ function ProviderList({
         </div>
       ) : (
         <div className="grid gap-6">
-          {filteredProviders.map((provider) => (
+          {filteredProviders.map((provider, index) => (
             <Card
               key={provider.id}
               className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
                 provider.id === currentProviderId
                   ? "ring-4 ring-main"
-                  : "hover:ring-2 hover:ring-border"
+                  : index === selectedIndex
+                    ? "ring-2 ring-blue-500"
+                    : "hover:ring-2 hover:ring-border"
               }`}
             >
               <CardHeader className="p-4">
