@@ -480,16 +480,9 @@ pub async fn launch_claude_with_provider(
 
     drop(config);
 
-    // 创建临时配置文件供 claude --settings 使用
-    // 使用 UUID 确保文件名安全且唯一
-    let temp_file_name = format!("claude_settings_{}.json", uuid::Uuid::new_v4().simple());
-    let temp_settings_path = std::env::temp_dir().join(temp_file_name);
-    let settings_content = serde_json::to_string_pretty(&provider.settings_config)
+    // 将配置序列化为 JSON 字符串供 claude --settings 使用
+    let settings_json = serde_json::to_string(&provider.settings_config)
         .map_err(|e| format!("序列化配置失败: {}", e))?;
-    std::fs::write(&temp_settings_path, settings_content)
-        .map_err(|e| format!("写入临时配置文件失败: {}", e))?;
-
-    let temp_settings_path_str = temp_settings_path.to_string_lossy().to_string();
 
     // 提取环境变量
     let env_obj = provider
@@ -528,14 +521,15 @@ pub async fn launch_claude_with_provider(
             .collect::<Vec<_>>()
             .join("; ");
 
-        let escaped_settings_path = temp_settings_path_str.replace("'", "'\\''");
+        // 转义 JSON 字符串中的单引号和双引号以在 shell 中安全使用
+        let escaped_settings_json = settings_json.replace("'", "'\\''");
         let script = format!(
             "tell application \"Terminal\"\n\
              activate\n\
              do script \"{} && claude --settings '{}'\"\n\
              end tell",
             env_exports.replace("\"", "\\\""),
-            escaped_settings_path.replace("\"", "\\\"")
+            escaped_settings_json.replace("\"", "\\\"")
         );
 
         std::process::Command::new("osascript")
@@ -550,7 +544,9 @@ pub async fn launch_claude_with_provider(
         // Windows: 直接使用环境变量而不是通过 set 命令
         // 这样可以避免 shell 注入问题
 
-        let claude_cmd = format!("claude --settings \"{}\"", temp_settings_path_str);
+        // 在 Windows 中，JSON 字符串需要用双引号包裹，内部的双引号需要转义
+        let escaped_settings_json = settings_json.replace("\"", "\\\"");
+        let claude_cmd = format!("claude --settings \"{}\"", escaped_settings_json);
 
         // 尝试使用 Windows Terminal，如果失败则回退到 cmd
         let mut wt_cmd = std::process::Command::new("wt.exe");
@@ -587,10 +583,11 @@ pub async fn launch_claude_with_provider(
             .collect::<Vec<_>>()
             .join("; ");
 
-        let escaped_settings_path = temp_settings_path_str.replace("'", "'\\''");
+        // 转义 JSON 字符串中的单引号以在 bash 中安全使用
+        let escaped_settings_json = settings_json.replace("'", "'\\''");
         let command = format!(
             "{} && claude --settings '{}'",
-            env_exports, escaped_settings_path
+            env_exports, escaped_settings_json
         );
 
         // 尝试常见的 Linux 终端
