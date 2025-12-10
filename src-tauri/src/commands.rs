@@ -521,7 +521,7 @@ pub async fn launch_claude_with_provider(
             .collect::<Vec<_>>()
             .join("; ");
 
-        // 转义 JSON 字符串中的单引号和双引号以在 shell 中安全使用
+        // 转义 JSON 字符串：先转义单引号（用于 shell），再在 format! 中转义双引号（用于 AppleScript）
         let escaped_settings_json = settings_json.replace("'", "'\\''");
         let script = format!(
             "tell application \"Terminal\"\n\
