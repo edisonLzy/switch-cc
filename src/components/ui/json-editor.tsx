@@ -46,10 +46,16 @@ export function JsonEditor({
             backgroundColor: isDarkMode
               ? "#282c34"
               : "var(--secondary-background)",
+            maxHeight: "400px",
+            overflow: "auto",
           },
           ".cm-content": {
             fontFamily: "ui-monospace, monospace",
             minHeight: "200px",
+          },
+          ".cm-scroller": {
+            overflow: "auto",
+            maxHeight: "400px",
           },
           ".cm-gutters": {
             backgroundColor: isDarkMode ? "#21252b" : "var(--background)",
