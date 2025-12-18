@@ -7,9 +7,9 @@
 [![Built with Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange.svg)](https://tauri.app/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**一个专为 Claude Code 打造的智能配置管理工具**
+**一个智能配置管理工具，支持 Claude Code 和 Codex**
 
-优雅地管理多个 API 供应商，一键切换不同配置，让你的 Claude Code 使用体验更加流畅。
+优雅地管理多个 API 供应商，一键切换不同配置，让你的 Claude Code 和 Codex 使用体验更加流畅。
 
 [下载安装](#下载安装) • [功能特性](#功能特性) • [使用指南](#使用说明) • [开发文档](#开发)
 
@@ -19,17 +19,18 @@
 
 ## ✨ 项目简介
 
-**Switch CC** 是一个轻量级的桌面应用程序，专门为 [Claude Code](https://claude.ai/code) 用户设计，用于管理和快速切换不同的 API 供应商配置。
+**Switch CC** 是一个轻量级的桌面应用程序，为 [Claude Code](https://claude.ai/code) 和 Codex 用户设计，用于管理和快速切换不同的 AI 编程助手配置。
 
 ### 🎯 解决什么问题？
 
-使用 Claude Code 时，你可能需要在不同的 API 供应商之间切换：
+使用 AI 编程助手时，你可能需要在不同的 API 供应商之间切换：
 - 🌍 **官方 API** vs **中国区代理服务**
 - 💰 **不同的付费计划**和配额管理
 - 🔄 **开发环境** vs **生产环境**配置
 - 🏢 **个人账号** vs **团队账号**
+- 🤖 **Claude** vs **Codex** 不同AI服务
 
-传统方式需要手动编辑 `~/.claude/settings.json` 文件，容易出错且效率低下。Switch CC 提供了一个可视化的解决方案，让配置切换变得简单、安全、快速。
+传统方式需要手动编辑 `~/.claude/settings.json` 或 `~/.codex/config.json` 文件，容易出错且效率低下。Switch CC 提供了一个可视化的解决方案，让配置切换变得简单、安全、快速。
 
 ### 💡 核心价值
 
@@ -51,9 +52,9 @@
 
 #### 主窗口模式
 - ➕ 添加/编辑/删除供应商配置
-- 📋 管理多个 API 提供商
+- 📋 管理 Claude 和 Codex 提供商
 - ⚙️ 自定义配置参数
-- 📖 查看当前 Claude 配置
+- 📖 查看当前配置
 - 🔍 预设供应商模板
 
 </td>
@@ -73,9 +74,14 @@
 
 内置多个主流 API 供应商模板,开箱即用：
 
+**Claude 供应商**
 - 🤖 **智谱清言** - 智谱AI (GLM) 系列模型接口
 - 🔀 **AnyRouter** - 多模型聚合路由服务
 - 📦 **PackyCode** - 代码优化推理平台
+
+**Codex 供应商**
+- 🔐 **OpenAI Codex** - OpenAI 官方 Codex 服务
+- ☁️ **Azure OpenAI** - Microsoft Azure OpenAI 服务
 
 ### 🔧 高级特性
 
@@ -227,11 +233,23 @@ Switch_CC_2.0.0_universal.dmg
 
 对于高级用户，可以直接编辑 JSON 配置（使用 CodeMirror 编辑器）：
 
+**Claude 配置示例：**
 ```json
 {
   "env": {
     "ANTHROPIC_AUTH_TOKEN": "your-api-key",
     "ANTHROPIC_BASE_URL": "https://api.anthropic.com"
+  }
+}
+```
+
+**Codex 配置示例：**
+```json
+{
+  "openai": {
+    "api_key": "your-openai-api-key",
+    "organization_id": "your-org-id",
+    "api_base": "https://api.openai.com"
   }
 }
 ```
@@ -243,6 +261,7 @@ Switch_CC_2.0.0_universal.dmg
   - `settings.json` - 应用设置
 
 - **Claude 配置**：`~/.claude/settings.json`
+- **Codex 配置**：`~/.codex/config.json`
 
 ---
 
@@ -457,9 +476,11 @@ chore: 构建/工具链更新
 ## 📋 常见问题
 
 <details>
-<summary><strong>Q: 切换配置后 Claude Code 没有生效？</strong></summary>
+<summary><strong>Q: 切换配置后没有生效？</strong></summary>
 
-A: 需要重启 Claude Code 终端窗口才能加载新配置。关闭当前终端，重新打开即可。
+A: 需要重启对应的终端窗口才能加载新配置：
+- **Claude Code**: 关闭并重新打开 Claude Code 终端
+- **Codex**: 重启使用 Codex 的编辑器或终端
 </details>
 
 <details>
@@ -475,7 +496,10 @@ A: 这是因为应用使用了 ad-hoc 签名。解决方法：
 <details>
 <summary><strong>Q: 支持哪些 API 供应商？</strong></summary>
 
-A: 理论上支持所有兼容 Anthropic API 格式的供应商。内置了常用的预设模板，你也可以自定义配置。
+A: 
+- **Claude**: 支持所有兼容 Anthropic API 格式的供应商（Claude 官方、智谱清言、AnyRouter 等）
+- **Codex**: 支持 OpenAI Codex、Azure OpenAI 等
+- 也可以通过自定义配置添加其他兼容的供应商
 </details>
 
 <details>
@@ -484,6 +508,7 @@ A: 理论上支持所有兼容 Anthropic API 格式的供应商。内置了常�
 A:
 - 应用配置：`~/Library/Application Support/switch-cc/`
 - Claude 配置：`~/.claude/settings.json`
+- Codex 配置：`~/.codex/config.json`
 </details>
 
 <details>
