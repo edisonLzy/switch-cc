@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Cloud,
   Upload,
-  Download,
   RefreshCw,
   Loader2,
   LogIn,
@@ -36,21 +35,19 @@ type SyncStatus =
   | "error"
   | "logging_in";
 
-// Constants
-const AUTO_CLOSE_DELAY = 1500; // milliseconds
 
 function ConfigSyncModal({
   providers,
   onClose,
   onSyncComplete,
 }: ConfigSyncModalProps) {
-  const [username, setUsername] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-  const [userId, setUserId] = useState<string>("");
+  const [username, setUsername] = useState<string>("");
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [message, setMessage] = useState<string>("");
-  const [isConnected, setIsConnected] = useState<boolean>(false);
+
   const [remoteConfigCount, setRemoteConfigCount] = useState<number>(0);
 
   const localConfigCount = Object.keys(providers).length;
@@ -60,9 +57,27 @@ function ConfigSyncModal({
     setStatus(statusType);
   };
 
+  // Login persistence
+  useEffect(() => {
+    const token = configSyncAPI.getAuthToken();
+    if (token) {
+      const userData = configSyncAPI.getUserData();
+      setIsLoggedIn(true);
+      setEmail(userData.email || "");
+      setUsername(userData.username || "");
+      
+      // Attempt to refresh remote count
+      configSyncAPI.testConnection().then(result => {
+        if (result.success) {
+          setRemoteConfigCount(result.configCount || 0);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
   const handleLogin = async () => {
-    if (!username.trim() || !password.trim()) {
-      showMessage("请输入用户名和密码", "error");
+    if (!email.trim() || !password.trim()) {
+      showMessage("请输入邮箱和密码", "error");
       return;
     }
 
@@ -70,30 +85,29 @@ function ConfigSyncModal({
     setMessage("正在登录...");
 
     try {
-      const result = await configSyncAPI.login(username.trim(), password);
+      const result = await configSyncAPI.login(email.trim(), password);
 
       if (result.success && result.token) {
         setIsLoggedIn(true);
-        setUserId(result.userId || username);
+        setUsername(result.username || "");
+        
+        // Save user data for persistence
+        configSyncAPI.setUserData(email.trim(), result.username || email.trim());
+
         showMessage(
-          `登录成功！用户ID: ${result.userId || username}`,
+          `登录成功！欢迎 ${result.username || email}`,
           "success",
         );
 
-        // Auto test connection after login
+        // Fetch remote config count after login
         setTimeout(async () => {
           try {
             const testResult = await configSyncAPI.testConnection();
             if (testResult.success) {
-              setIsConnected(true);
               setRemoteConfigCount(testResult.configCount || 0);
-              showMessage(
-                `已连接云端，共有 ${testResult.configCount} 个配置`,
-                "success",
-              );
             }
           } catch (error) {
-            // Silently fail connection test
+            // Silently fail
           }
         }, 500);
       } else {
@@ -109,34 +123,7 @@ function ConfigSyncModal({
     }
   };
 
-  const handleTestConnection = async () => {
-    if (!isLoggedIn) {
-      showMessage("请先登录", "error");
-      return;
-    }
 
-    setStatus("connecting");
-    setMessage("正在测试连接...");
-
-    try {
-      const result = await configSyncAPI.testConnection();
-
-      if (result.success) {
-        setIsConnected(true);
-        setRemoteConfigCount(result.configCount || 0);
-        showMessage(`连接成功！云端有 ${result.configCount} 个配置`, "success");
-      } else {
-        setIsConnected(false);
-        showMessage(`连接失败：${result.error}`, "error");
-      }
-    } catch (error) {
-      setIsConnected(false);
-      showMessage(
-        `连接失败：${error instanceof Error ? error.message : "未知错误"}`,
-        "error",
-      );
-    }
-  };
 
   const handleUpload = async () => {
     if (!isLoggedIn) {
@@ -153,11 +140,6 @@ function ConfigSyncModal({
 
       showMessage(`成功上传 ${providerList.length} 个配置`, "success");
       setRemoteConfigCount(providerList.length);
-
-      // Auto-close after delay
-      setTimeout(() => {
-        onClose();
-      }, AUTO_CLOSE_DELAY);
     } catch (error) {
       showMessage(
         `上传失败：${error instanceof Error ? error.message : "未知错误"}`,
@@ -166,49 +148,7 @@ function ConfigSyncModal({
     }
   };
 
-  const handleDownload = async () => {
-    if (!isLoggedIn) {
-      showMessage("请先登录", "error");
-      return;
-    }
 
-    setStatus("downloading");
-    setMessage("正在从云端下载配置...");
-
-    try {
-      const remoteProviders = await configSyncAPI.getAllConfigs();
-
-      if (remoteProviders.length === 0) {
-        showMessage("云端没有配置，无需下载", "error");
-        return;
-      }
-
-      // Merge local and remote configs, remote takes priority
-      const localProviders = Object.values(providers);
-      const merged = [...remoteProviders];
-
-      // Add local-only configs using Set for O(n) lookup
-      const remoteIds = new Set(remoteProviders.map((p) => p.id));
-      for (const localProvider of localProviders) {
-        if (!remoteIds.has(localProvider.id)) {
-          merged.push(localProvider);
-        }
-      }
-
-      showMessage(`成功下载 ${remoteProviders.length} 个配置`, "success");
-      onSyncComplete(merged);
-
-      // Auto-close after delay
-      setTimeout(() => {
-        onClose();
-      }, AUTO_CLOSE_DELAY);
-    } catch (error) {
-      showMessage(
-        `下载失败：${error instanceof Error ? error.message : "未知错误"}`,
-        "error",
-      );
-    }
-  };
 
   const handleSmartSync = async () => {
     if (!isLoggedIn) {
@@ -265,11 +205,6 @@ function ConfigSyncModal({
       // 4. 更新本地配置
       showMessage(`智能同步完成！共 ${merged.length} 个配置`, "success");
       onSyncComplete(merged);
-
-      // Auto-close after delay
-      setTimeout(() => {
-        onClose();
-      }, AUTO_CLOSE_DELAY);
     } catch (error) {
       showMessage(
         `同步失败：${error instanceof Error ? error.message : "未知错误"}`,
@@ -302,12 +237,13 @@ function ConfigSyncModal({
             <>
               {/* 登录表单 */}
               <div className="space-y-2">
-                <Label htmlFor="username">用户名</Label>
+                <Label htmlFor="email">邮箱</Label>
                 <Input
-                  id="username"
-                  placeholder="请输入用户名"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  id="email"
+                  type="email"
+                  placeholder="请输入邮箱"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
                 />
               </div>
@@ -341,42 +277,62 @@ function ConfigSyncModal({
                     <div className="text-sm font-base">{username}</div>
                   </div>
                   <div className="text-xs text-foreground opacity-70">
-                    ID: {userId}
+                    {email}
                   </div>
-                </div>
-              </div>
-
-              {/* 连接状态 */}
-              <div className="flex items-center justify-between p-3 rounded-base border-2 border-border bg-secondary-background">
-                <span className="text-sm font-base">连接状态</span>
-                <div className="flex items-center gap-2">
-                  <div
-                    className={`w-2 h-2 rounded-full ${
-                      isConnected ? "bg-green-500" : "bg-gray-400"
-                    }`}
-                  />
-                  <span className="text-sm">
-                    {isConnected ? "已连接" : "未连接"}
-                  </span>
                 </div>
               </div>
 
               {/* 配置信息 */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
+                {/* 本地配置卡片 */}
+                <div className="p-3 rounded-base border-2 border-border bg-secondary-background relative">
                   <div className="text-xs text-foreground opacity-70 mb-1">
                     本地配置
                   </div>
-                  <div className="text-2xl font-heading">
+                  <div className="text-2xl font-heading mb-1">
                     {localConfigCount}
                   </div>
+                  <div className="absolute top-2 right-2">
+                    <Button
+                      onClick={handleUpload}
+                      disabled={isDisabled}
+                      variant="neutral"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="上传"
+                    >
+                      {status === "uploading" ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Upload size={14} />
+                      )}
+                    </Button>
+                  </div>
                 </div>
-                <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
+
+                {/* 远程配置卡片 */}
+                <div className="p-3 rounded-base border-2 border-border bg-secondary-background relative">
                   <div className="text-xs text-foreground opacity-70 mb-1">
                     远程配置
                   </div>
-                  <div className="text-2xl font-heading">
-                    {isConnected ? remoteConfigCount : "-"}
+                  <div className="text-2xl font-heading mb-1">
+                    {remoteConfigCount}
+                  </div>
+                  <div className="absolute top-2 right-2">
+                    <Button
+                      onClick={handleSmartSync}
+                      disabled={isDisabled}
+                      variant="default"
+                      size="icon"
+                      className="h-8 w-8"
+                      title="同步"
+                    >
+                      {status === "syncing" ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <RefreshCw size={14} />
+                      )}
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -408,7 +364,7 @@ function ConfigSyncModal({
               {/* 登录按钮 */}
               <Button
                 onClick={handleLogin}
-                disabled={!username.trim() || !password.trim() || isLoading}
+                disabled={!email.trim() || !password.trim() || isLoading}
                 variant="default"
                 className="w-full"
               >
@@ -425,69 +381,7 @@ function ConfigSyncModal({
                 )}
               </Button>
             </div>
-          ) : (
-            <div className="flex flex-col w-full gap-3">
-              {/* 第一行：测试连接 */}
-              <Button
-                onClick={handleTestConnection}
-                disabled={isDisabled}
-                variant="neutral"
-                className="w-full"
-              >
-                {status === "connecting" ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    连接中...
-                  </>
-                ) : (
-                  <>
-                    <Cloud size={16} />
-                    测试连接
-                  </>
-                )}
-              </Button>
-
-              {/* 第二行：上传、下载、同步 */}
-              <div className="grid grid-cols-3 gap-3">
-                <Button
-                  onClick={handleUpload}
-                  disabled={isDisabled}
-                  variant="neutral"
-                >
-                  {status === "uploading" ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Upload size={16} />
-                  )}
-                  上传
-                </Button>
-                <Button
-                  onClick={handleDownload}
-                  disabled={isDisabled}
-                  variant="neutral"
-                >
-                  {status === "downloading" ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <Download size={16} />
-                  )}
-                  下载
-                </Button>
-                <Button
-                  onClick={handleSmartSync}
-                  disabled={isDisabled}
-                  variant="default"
-                >
-                  {status === "syncing" ? (
-                    <Loader2 size={16} className="animate-spin" />
-                  ) : (
-                    <RefreshCw size={16} />
-                  )}
-                  同步
-                </Button>
-              </div>
-            </div>
-          )}
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

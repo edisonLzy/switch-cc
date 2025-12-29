@@ -21,6 +21,27 @@ export class ConfigSyncAPI {
   constructor() {
     // Get API base URL from environment variable
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+    
+    // Initialize token from localStorage
+    this.authToken = localStorage.getItem("switch_cc_sync_token");
+  }
+
+  /**
+   * 保存用户信息
+   */
+  setUserData(email: string, username: string): void {
+    localStorage.setItem("switch_cc_sync_email", email);
+    localStorage.setItem("switch_cc_sync_username", username);
+  }
+
+  /**
+   * 获取用户信息
+   */
+  getUserData(): { email: string | null; username: string | null } {
+    return {
+      email: localStorage.getItem("switch_cc_sync_email"),
+      username: localStorage.getItem("switch_cc_sync_username"),
+    };
   }
 
   /**
@@ -28,6 +49,7 @@ export class ConfigSyncAPI {
    */
   setAuthToken(token: string): void {
     this.authToken = token;
+    localStorage.setItem("switch_cc_sync_token", token);
   }
 
   /**
@@ -38,10 +60,13 @@ export class ConfigSyncAPI {
   }
 
   /**
-   * 清除认证令牌
+   * 清除认证令牌和用户信息
    */
   clearAuthToken(): void {
     this.authToken = null;
+    localStorage.removeItem("switch_cc_sync_token");
+    localStorage.removeItem("switch_cc_sync_email");
+    localStorage.removeItem("switch_cc_sync_username");
   }
 
   /**
@@ -97,8 +122,8 @@ export class ConfigSyncAPI {
         );
       }
 
-      const data: BackendConfig = await response.json();
-      return this.backendConfigToProvider(data);
+      const result = await response.json();
+      return result.data ? this.backendConfigToProvider(result.data) : null;
     } catch (error) {
       console.error("[ConfigSyncAPI] 获取配置失败:", error);
       throw error;
@@ -125,7 +150,8 @@ export class ConfigSyncAPI {
         );
       }
 
-      const data: BackendConfig[] = await response.json();
+      const result = await response.json();
+      const data: BackendConfig[] = result.data || [];
       return data.map((config) => this.backendConfigToProvider(config));
     } catch (error) {
       console.error("[ConfigSyncAPI] 获取所有配置失败:", error);
@@ -238,16 +264,16 @@ export class ConfigSyncAPI {
    * 用户登录
    */
   async login(
-    username: string,
+    email: string,
     password: string,
   ): Promise<{
     success: boolean;
     token?: string;
-    userId?: string;
+    username?: string;
     error?: string;
   }> {
     try {
-      const url = `${this.baseUrl}/v1/switch-cc/auth/login`;
+      const url = `${this.baseUrl}/v1/auth/login`;
       console.log("[ConfigSyncAPI] 登录:", url);
 
       const response = await fetch(url, {
@@ -255,7 +281,7 @@ export class ConfigSyncAPI {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       if (!response.ok) {
@@ -265,18 +291,22 @@ export class ConfigSyncAPI {
         );
       }
 
-      const data = await response.json();
+      const result = await response.json();
       console.log("[ConfigSyncAPI] 登录成功");
 
+      // 解析嵌套的响应结构: { code, data: { user, token } }
+      const token = result.data?.token;
+      const username = result.data?.user?.username;
+
       // Store the auth token
-      if (data.token) {
-        this.setAuthToken(data.token);
+      if (token) {
+        this.setAuthToken(token);
       }
 
       return {
         success: true,
-        token: data.token,
-        userId: data.userId || data.id || username,
+        token: token,
+        username: username,
       };
     } catch (error) {
       console.error("[ConfigSyncAPI] 登录失败:", error);
