@@ -61,10 +61,7 @@ function ConfigSyncModal({
       if (result.success) {
         setIsConnected(true);
         setRemoteConfigCount(result.configCount || 0);
-        showMessage(
-          `连接成功！云端有 ${result.configCount} 个配置`,
-          "success",
-        );
+        showMessage(`连接成功！云端有 ${result.configCount} 个配置`, "success");
       } else {
         setIsConnected(false);
         showMessage(`连接失败：${result.error}`, "error");
@@ -218,9 +215,12 @@ function ConfigSyncModal({
     }
   };
 
-  const isLoading = ["connecting", "uploading", "downloading", "syncing"].includes(
-    status,
-  );
+  const isLoading = [
+    "connecting",
+    "uploading",
+    "downloading",
+    "syncing",
+  ].includes(status);
   const isDisabled = !userId.trim() || isLoading;
 
   return (
