@@ -6,8 +6,9 @@ import EditProviderModal from "./EditProviderModal";
 import { ConfirmDialog } from "./ConfirmDialog";
 import SettingsModal from "./SettingsModal";
 import ClaudeConfigModal from "./ClaudeConfigModal";
+import ConfigSyncModal from "./ConfigSyncModal";
 import { UpdateBadge } from "./UpdateBadge";
-import { Plus, Settings, Moon, Sun, Eye } from "lucide-react";
+import { Plus, Settings, Moon, Sun, Eye, Cloud } from "lucide-react";
 import { Button } from "../ui/button";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { extractErrorMessage } from "../../utils/errorUtils";
@@ -34,6 +35,7 @@ function MainWindow() {
   } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
+  const [showSyncModal, setShowSyncModal] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
@@ -225,6 +227,41 @@ function MainWindow() {
     }
   };
 
+  // 处理同步完成
+  const handleSyncComplete = async (syncedProviders: Provider[]) => {
+    try {
+      // 获取现有的供应商列表以检查哪些已存在
+      const existingProviders = await api.getProviders();
+
+      // 保存每个配置到本地存储
+      for (const provider of syncedProviders) {
+        try {
+          if (existingProviders[provider.id]) {
+            // 已存在，执行更新
+            await api.updateProvider(provider);
+          } else {
+            // 不存在，执行添加
+            await api.addProvider(provider);
+          }
+        } catch (error) {
+          console.error("保存配置失败:", provider.id, error);
+        }
+      }
+
+      // 重新加载配置
+      await loadProviders();
+
+      // 更新托盘菜单
+      await api.updateTrayMenu();
+
+      showNotification("配置同步成功！", "success");
+    } catch (error) {
+      console.error("同步完成处理失败:", error);
+      const errorMessage = extractErrorMessage(error);
+      showNotification(`同步失败：${errorMessage}`, "error");
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* 顶部导航区域 - 固定高度 */}
@@ -246,6 +283,14 @@ function MainWindow() {
               title="查看当前 Claude 配置"
             >
               <Eye size={18} />
+            </Button>
+            <Button
+              onClick={() => setShowSyncModal(true)}
+              variant="neutral"
+              size="icon"
+              title="配置云同步"
+            >
+              <Cloud size={18} />
             </Button>
             <Button
               onClick={() => setIsSettingsOpen(true)}
@@ -332,6 +377,14 @@ function MainWindow() {
         <ClaudeConfigModal
           isOpen={isClaudeConfigOpen}
           onClose={() => setIsClaudeConfigOpen(false)}
+        />
+      )}
+
+      {showSyncModal && (
+        <ConfigSyncModal
+          providers={providers}
+          onClose={() => setShowSyncModal(false)}
+          onSyncComplete={handleSyncComplete}
         />
       )}
     </div>
