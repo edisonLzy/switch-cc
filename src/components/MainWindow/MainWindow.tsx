@@ -230,20 +230,21 @@ function MainWindow() {
   // 处理同步完成
   const handleSyncComplete = async (syncedProviders: Provider[]) => {
     try {
-      // 将同步后的配置保存到本地存储
-      const providersMap: Record<string, Provider> = {};
+      // 获取现有的供应商列表以检查哪些已存在
+      const existingProviders = await api.getProviders();
+
+      // 保存每个配置到本地存储
       for (const provider of syncedProviders) {
-        providersMap[provider.id] = provider;
-        // 更新或添加每个配置到后端
         try {
-          await api.updateProvider(provider);
-        } catch (error) {
-          // 如果更新失败，尝试添加
-          try {
+          if (existingProviders[provider.id]) {
+            // 已存在，执行更新
+            await api.updateProvider(provider);
+          } else {
+            // 不存在，执行添加
             await api.addProvider(provider);
-          } catch (addError) {
-            console.error("保存配置失败:", provider.id, addError);
           }
+        } catch (error) {
+          console.error("保存配置失败:", provider.id, error);
         }
       }
 

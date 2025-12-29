@@ -17,10 +17,9 @@ interface BackendConfig {
 export class ConfigSyncAPI {
   private baseUrl: string;
 
-  constructor(baseUrl?: string) {
-    // 从环境变量获取 API 基础 URL，如果未设置则使用传入的 baseUrl
-    this.baseUrl =
-      baseUrl || import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
+  constructor() {
+    // Get API base URL from environment variable
+    this.baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
   }
 
   /**

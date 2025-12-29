@@ -28,6 +28,9 @@ type SyncStatus =
   | "success"
   | "error";
 
+// Constants
+const AUTO_CLOSE_DELAY = 1500; // milliseconds
+
 function ConfigSyncModal({
   providers,
   onClose,
@@ -91,10 +94,10 @@ function ConfigSyncModal({
       showMessage(`成功上传 ${providerList.length} 个配置`, "success");
       setRemoteConfigCount(providerList.length);
 
-      // 1.5秒后自动关闭
+      // Auto-close after delay
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, AUTO_CLOSE_DELAY);
     } catch (error) {
       showMessage(
         `上传失败：${error instanceof Error ? error.message : "未知错误"}`,
@@ -120,14 +123,14 @@ function ConfigSyncModal({
         return;
       }
 
-      // 合并本地和远程配置，远程配置优先
+      // Merge local and remote configs, remote takes priority
       const localProviders = Object.values(providers);
       const merged = [...remoteProviders];
 
-      // 添加本地独有的配置
+      // Add local-only configs using Set for O(n) lookup
+      const remoteIds = new Set(remoteProviders.map((p) => p.id));
       for (const localProvider of localProviders) {
-        const exists = merged.some((p) => p.id === localProvider.id);
-        if (!exists) {
+        if (!remoteIds.has(localProvider.id)) {
           merged.push(localProvider);
         }
       }
@@ -135,10 +138,10 @@ function ConfigSyncModal({
       showMessage(`成功下载 ${remoteProviders.length} 个配置`, "success");
       onSyncComplete(merged);
 
-      // 1.5秒后自动关闭
+      // Auto-close after delay
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, AUTO_CLOSE_DELAY);
     } catch (error) {
       showMessage(
         `下载失败：${error instanceof Error ? error.message : "未知错误"}`,
@@ -203,10 +206,10 @@ function ConfigSyncModal({
       showMessage(`智能同步完成！共 ${merged.length} 个配置`, "success");
       onSyncComplete(merged);
 
-      // 1.5秒后自动关闭
+      // Auto-close after delay
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, AUTO_CLOSE_DELAY);
     } catch (error) {
       showMessage(
         `同步失败：${error instanceof Error ? error.message : "未知错误"}`,
