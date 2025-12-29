@@ -248,6 +248,52 @@ export class ConfigSyncAPI {
       };
     }
   }
+
+  /**
+   * 用户登录
+   */
+  async login(
+    username: string,
+    password: string,
+  ): Promise<{
+    success: boolean;
+    userId?: string;
+    error?: string;
+  }> {
+    try {
+      const url = `${this.baseUrl}/v1/switch-cc/auth/login`;
+      console.log("[ConfigSyncAPI] 登录:", url);
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `HTTP ${response.status}: ${errorText || response.statusText}`,
+        );
+      }
+
+      const data = await response.json();
+      console.log("[ConfigSyncAPI] 登录成功:", data.userId);
+
+      return {
+        success: true,
+        userId: data.userId || data.id || username, // Fallback to username if no userId returned
+      };
+    } catch (error) {
+      console.error("[ConfigSyncAPI] 登录失败:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "未知错误",
+      };
+    }
+  }
 }
 
 // 导出单例实例

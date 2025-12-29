@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { Cloud, Upload, Download, RefreshCw, Loader2 } from "lucide-react";
+import {
+  Cloud,
+  Upload,
+  Download,
+  RefreshCw,
+  Loader2,
+  LogIn,
+} from "lucide-react";
 import { Provider } from "../../types";
 import { configSyncAPI } from "../../lib/config-sync-api";
 import {
@@ -26,7 +33,8 @@ type SyncStatus =
   | "downloading"
   | "syncing"
   | "success"
-  | "error";
+  | "error"
+  | "logging_in";
 
 // Constants
 const AUTO_CLOSE_DELAY = 1500; // milliseconds
@@ -36,7 +44,10 @@ function ConfigSyncModal({
   onClose,
   onSyncComplete,
 }: ConfigSyncModalProps) {
+  const [username, setUsername] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [status, setStatus] = useState<SyncStatus>("idle");
   const [message, setMessage] = useState<string>("");
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -49,9 +60,57 @@ function ConfigSyncModal({
     setStatus(statusType);
   };
 
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      showMessage("请输入用户名和密码", "error");
+      return;
+    }
+
+    setStatus("logging_in");
+    setMessage("正在登录...");
+
+    try {
+      const result = await configSyncAPI.login(username.trim(), password);
+
+      if (result.success && result.userId) {
+        setIsLoggedIn(true);
+        setUserId(result.userId);
+        showMessage(`登录成功！用户ID: ${result.userId}`, "success");
+
+        // Auto test connection after login
+        setTimeout(async () => {
+          try {
+            const testResult = await configSyncAPI.testConnection(
+              result.userId!,
+            );
+            if (testResult.success) {
+              setIsConnected(true);
+              setRemoteConfigCount(testResult.configCount || 0);
+              showMessage(
+                `已连接云端，共有 ${testResult.configCount} 个配置`,
+                "success",
+              );
+            }
+          } catch (error) {
+            // Silently fail connection test
+          }
+        }, 500);
+      } else {
+        setIsLoggedIn(false);
+        showMessage(`登录失败：${result.error}`, "error");
+      }
+    } catch (error) {
+      setIsLoggedIn(false);
+      showMessage(
+        `登录失败：${error instanceof Error ? error.message : "未知错误"}`,
+        "error",
+      );
+    }
+  };
+
   const handleTestConnection = async () => {
-    if (!userId.trim()) {
-      showMessage("请输入用户 ID", "error");
+    if (!isLoggedIn || !userId.trim()) {
+      showMessage("请先登录", "error");
       return;
     }
 
@@ -79,8 +138,8 @@ function ConfigSyncModal({
   };
 
   const handleUpload = async () => {
-    if (!userId.trim()) {
-      showMessage("请输入用户 ID", "error");
+    if (!isLoggedIn || !userId.trim()) {
+      showMessage("请先登录", "error");
       return;
     }
 
@@ -107,8 +166,8 @@ function ConfigSyncModal({
   };
 
   const handleDownload = async () => {
-    if (!userId.trim()) {
-      showMessage("请输入用户 ID", "error");
+    if (!isLoggedIn || !userId.trim()) {
+      showMessage("请先登录", "error");
       return;
     }
 
@@ -151,8 +210,8 @@ function ConfigSyncModal({
   };
 
   const handleSmartSync = async () => {
-    if (!userId.trim()) {
-      showMessage("请输入用户 ID", "error");
+    if (!isLoggedIn || !userId.trim()) {
+      showMessage("请先登录", "error");
       return;
     }
 
@@ -223,8 +282,9 @@ function ConfigSyncModal({
     "uploading",
     "downloading",
     "syncing",
+    "logging_in",
   ].includes(status);
-  const isDisabled = !userId.trim() || isLoading;
+  const isDisabled = !isLoggedIn || isLoading;
 
   return (
     <Dialog open onOpenChange={onClose}>
@@ -237,50 +297,90 @@ function ConfigSyncModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* 用户 ID 输入 */}
-          <div className="space-y-2">
-            <Label htmlFor="userId">用户 ID</Label>
-            <Input
-              id="userId"
-              placeholder="请输入您的用户 ID"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              disabled={isLoading}
-            />
-          </div>
+          {!isLoggedIn ? (
+            <>
+              {/* 登录表单 */}
+              <div className="space-y-2">
+                <Label htmlFor="username">用户名</Label>
+                <Input
+                  id="username"
+                  placeholder="请输入用户名"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
 
-          {/* 连接状态 */}
-          <div className="flex items-center justify-between p-3 rounded-base border-2 border-border bg-secondary-background">
-            <span className="text-sm font-base">连接状态</span>
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  isConnected ? "bg-green-500" : "bg-gray-400"
-                }`}
-              />
-              <span className="text-sm">
-                {isConnected ? "已连接" : "未连接"}
-              </span>
-            </div>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">密码</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="请输入密码"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isLoading) {
+                      handleLogin();
+                    }
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              {/* 登录状态显示 */}
+              <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-foreground opacity-70 mb-1">
+                      已登录
+                    </div>
+                    <div className="text-sm font-base">{username}</div>
+                  </div>
+                  <div className="text-xs text-foreground opacity-70">
+                    ID: {userId}
+                  </div>
+                </div>
+              </div>
 
-          {/* 配置信息 */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
-              <div className="text-xs text-foreground opacity-70 mb-1">
-                本地配置
+              {/* 连接状态 */}
+              <div className="flex items-center justify-between p-3 rounded-base border-2 border-border bg-secondary-background">
+                <span className="text-sm font-base">连接状态</span>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-2 h-2 rounded-full ${
+                      isConnected ? "bg-green-500" : "bg-gray-400"
+                    }`}
+                  />
+                  <span className="text-sm">
+                    {isConnected ? "已连接" : "未连接"}
+                  </span>
+                </div>
               </div>
-              <div className="text-2xl font-heading">{localConfigCount}</div>
-            </div>
-            <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
-              <div className="text-xs text-foreground opacity-70 mb-1">
-                远程配置
+
+              {/* 配置信息 */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
+                  <div className="text-xs text-foreground opacity-70 mb-1">
+                    本地配置
+                  </div>
+                  <div className="text-2xl font-heading">
+                    {localConfigCount}
+                  </div>
+                </div>
+                <div className="p-3 rounded-base border-2 border-border bg-secondary-background">
+                  <div className="text-xs text-foreground opacity-70 mb-1">
+                    远程配置
+                  </div>
+                  <div className="text-2xl font-heading">
+                    {isConnected ? remoteConfigCount : "-"}
+                  </div>
+                </div>
               </div>
-              <div className="text-2xl font-heading">
-                {isConnected ? remoteConfigCount : "-"}
-              </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* 状态消息 */}
           {message && (
@@ -302,67 +402,91 @@ function ConfigSyncModal({
         </div>
 
         <DialogFooter>
-          <div className="flex flex-col w-full gap-3">
-            {/* 第一行：测试连接 */}
-            <Button
-              onClick={handleTestConnection}
-              disabled={isDisabled}
-              variant="neutral"
-              className="w-full"
-            >
-              {status === "connecting" ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  连接中...
-                </>
-              ) : (
-                <>
-                  <Cloud size={16} />
-                  测试连接
-                </>
-              )}
-            </Button>
-
-            {/* 第二行：上传、下载、同步 */}
-            <div className="grid grid-cols-3 gap-3">
+          {!isLoggedIn ? (
+            <div className="flex flex-col w-full gap-3">
+              {/* 登录按钮 */}
               <Button
-                onClick={handleUpload}
-                disabled={isDisabled}
-                variant="neutral"
-              >
-                {status === "uploading" ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Upload size={16} />
-                )}
-                上传
-              </Button>
-              <Button
-                onClick={handleDownload}
-                disabled={isDisabled}
-                variant="neutral"
-              >
-                {status === "downloading" ? (
-                  <Loader2 size={16} className="animate-spin" />
-                ) : (
-                  <Download size={16} />
-                )}
-                下载
-              </Button>
-              <Button
-                onClick={handleSmartSync}
-                disabled={isDisabled}
+                onClick={handleLogin}
+                disabled={!username.trim() || !password.trim() || isLoading}
                 variant="default"
+                className="w-full"
               >
-                {status === "syncing" ? (
-                  <Loader2 size={16} className="animate-spin" />
+                {status === "logging_in" ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    登录中...
+                  </>
                 ) : (
-                  <RefreshCw size={16} />
+                  <>
+                    <LogIn size={16} />
+                    登录
+                  </>
                 )}
-                同步
               </Button>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col w-full gap-3">
+              {/* 第一行：测试连接 */}
+              <Button
+                onClick={handleTestConnection}
+                disabled={isDisabled}
+                variant="neutral"
+                className="w-full"
+              >
+                {status === "connecting" ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    连接中...
+                  </>
+                ) : (
+                  <>
+                    <Cloud size={16} />
+                    测试连接
+                  </>
+                )}
+              </Button>
+
+              {/* 第二行：上传、下载、同步 */}
+              <div className="grid grid-cols-3 gap-3">
+                <Button
+                  onClick={handleUpload}
+                  disabled={isDisabled}
+                  variant="neutral"
+                >
+                  {status === "uploading" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Upload size={16} />
+                  )}
+                  上传
+                </Button>
+                <Button
+                  onClick={handleDownload}
+                  disabled={isDisabled}
+                  variant="neutral"
+                >
+                  {status === "downloading" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Download size={16} />
+                  )}
+                  下载
+                </Button>
+                <Button
+                  onClick={handleSmartSync}
+                  disabled={isDisabled}
+                  variant="default"
+                >
+                  {status === "syncing" ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  同步
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
