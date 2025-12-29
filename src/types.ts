@@ -25,3 +25,16 @@ export interface Settings {
 
 // MenuBar 模式类型
 export type AppMode = "main" | "menubar";
+
+// 配置同步相关类型
+export interface SyncConfig {
+  userId: string;
+  providerId: string;
+  config: Record<string, any>;
+}
+
+export interface SyncStatus {
+  lastSyncTime?: number;
+  syncEnabled: boolean;
+  userId?: string;
+}
