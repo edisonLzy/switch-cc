@@ -16,6 +16,7 @@ interface BackendConfig {
  */
 export class ConfigSyncAPI {
   private baseUrl: string;
+  private authToken: string | null = null;
 
   constructor() {
     // Get API base URL from environment variable
@@ -23,25 +24,39 @@ export class ConfigSyncAPI {
   }
 
   /**
-   * 将前端 Provider 格式转换为后端格式
+   * 设置认证令牌
    */
-  private providerToBackendConfig(
-    provider: Provider,
-    userId: string,
-  ): BackendConfig {
-    return {
-      userId,
-      providerId: provider.id,
-      config: {
-        name: provider.name,
-        settingsConfig: provider.settingsConfig,
-        websiteUrl: provider.websiteUrl,
-      },
-      createdAt: provider.createdAt
-        ? new Date(provider.createdAt).toISOString()
-        : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  setAuthToken(token: string): void {
+    this.authToken = token;
+  }
+
+  /**
+   * 获取认证令牌
+   */
+  getAuthToken(): string | null {
+    return this.authToken;
+  }
+
+  /**
+   * 清除认证令牌
+   */
+  clearAuthToken(): void {
+    this.authToken = null;
+  }
+
+  /**
+   * 获取认证请求头
+   */
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
     };
+
+    if (this.authToken) {
+      headers["Authorization"] = `Bearer ${this.authToken}`;
+    }
+
+    return headers;
   }
 
   /**
@@ -60,19 +75,14 @@ export class ConfigSyncAPI {
   /**
    * 获取单个供应商配置
    */
-  async getConfig(
-    userId: string,
-    providerId: string,
-  ): Promise<Provider | null> {
+  async getConfig(providerId: string): Promise<Provider | null> {
     try {
-      const url = `${this.baseUrl}/v1/switch-cc/configs/${providerId}?userId=${encodeURIComponent(userId)}`;
+      const url = `${this.baseUrl}/v1/switch-cc/config/${providerId}`;
       console.log("[ConfigSyncAPI] 获取配置:", url);
 
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: this.getAuthHeaders(),
       });
 
       if (response.status === 404) {
@@ -98,16 +108,14 @@ export class ConfigSyncAPI {
   /**
    * 获取用户所有配置
    */
-  async getAllConfigs(userId: string): Promise<Provider[]> {
+  async getAllConfigs(): Promise<Provider[]> {
     try {
-      const url = `${this.baseUrl}/v1/switch-cc/configs?userId=${encodeURIComponent(userId)}`;
+      const url = `${this.baseUrl}/v1/switch-cc/configs`;
       console.log("[ConfigSyncAPI] 获取所有配置:", url);
 
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: this.getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -128,18 +136,22 @@ export class ConfigSyncAPI {
   /**
    * 创建或更新单个配置
    */
-  async upsertConfig(userId: string, provider: Provider): Promise<void> {
+  async upsertConfig(provider: Provider): Promise<void> {
     try {
-      const backendConfig = this.providerToBackendConfig(provider, userId);
-      const url = `${this.baseUrl}/v1/switch-cc/configs`;
-      console.log("[ConfigSyncAPI] 创建/更新配置:", url, backendConfig);
+      const url = `${this.baseUrl}/v1/switch-cc/config`;
+      console.log("[ConfigSyncAPI] 创建/更新配置:", url);
 
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(backendConfig),
+        headers: this.getAuthHeaders(),
+        body: JSON.stringify({
+          providerId: provider.id,
+          config: {
+            name: provider.name,
+            settingsConfig: provider.settingsConfig,
+            websiteUrl: provider.websiteUrl,
+          },
+        }),
       });
 
       if (!response.ok) {
@@ -159,38 +171,13 @@ export class ConfigSyncAPI {
   /**
    * 批量同步配置
    */
-  async syncConfigs(userId: string, providers: Provider[]): Promise<void> {
+  async syncConfigs(providers: Provider[]): Promise<void> {
     try {
-      const backendConfigs = providers.map((provider) =>
-        this.providerToBackendConfig(provider, userId),
-      );
-      const url = `${this.baseUrl}/v1/switch-cc/configs/sync`;
-      console.log(
-        "[ConfigSyncAPI] 批量同步配置:",
-        url,
-        `${backendConfigs.length} 个配置`,
-      );
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ configs: backendConfigs }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `HTTP ${response.status}: ${errorText || response.statusText}`,
-        );
+      // Use upsertConfig for each provider since there's no batch endpoint
+      for (const provider of providers) {
+        await this.upsertConfig(provider);
       }
-
-      console.log(
-        "[ConfigSyncAPI] 批量同步成功:",
-        backendConfigs.length,
-        "个配置",
-      );
+      console.log("[ConfigSyncAPI] 批量同步成功:", providers.length, "个配置");
     } catch (error) {
       console.error("[ConfigSyncAPI] 批量同步失败:", error);
       throw error;
@@ -200,16 +187,14 @@ export class ConfigSyncAPI {
   /**
    * 删除配置
    */
-  async deleteConfig(userId: string, providerId: string): Promise<void> {
+  async deleteConfig(providerId: string): Promise<void> {
     try {
-      const url = `${this.baseUrl}/v1/switch-cc/configs/${providerId}?userId=${encodeURIComponent(userId)}`;
+      const url = `${this.baseUrl}/v1/switch-cc/config/${providerId}`;
       console.log("[ConfigSyncAPI] 删除配置:", url);
 
       const response = await fetch(url, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: this.getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -229,13 +214,13 @@ export class ConfigSyncAPI {
   /**
    * 测试连接
    */
-  async testConnection(userId: string): Promise<{
+  async testConnection(): Promise<{
     success: boolean;
     configCount?: number;
     error?: string;
   }> {
     try {
-      const configs = await this.getAllConfigs(userId);
+      const configs = await this.getAllConfigs();
       return {
         success: true,
         configCount: configs.length,
@@ -257,6 +242,7 @@ export class ConfigSyncAPI {
     password: string,
   ): Promise<{
     success: boolean;
+    token?: string;
     userId?: string;
     error?: string;
   }> {
@@ -280,11 +266,17 @@ export class ConfigSyncAPI {
       }
 
       const data = await response.json();
-      console.log("[ConfigSyncAPI] 登录成功:", data.userId);
+      console.log("[ConfigSyncAPI] 登录成功");
+
+      // Store the auth token
+      if (data.token) {
+        this.setAuthToken(data.token);
+      }
 
       return {
         success: true,
-        userId: data.userId || data.id || username, // Fallback to username if no userId returned
+        token: data.token,
+        userId: data.userId || data.id || username,
       };
     } catch (error) {
       console.error("[ConfigSyncAPI] 登录失败:", error);

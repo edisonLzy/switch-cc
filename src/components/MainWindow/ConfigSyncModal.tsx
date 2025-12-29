@@ -72,17 +72,18 @@ function ConfigSyncModal({
     try {
       const result = await configSyncAPI.login(username.trim(), password);
 
-      if (result.success && result.userId) {
+      if (result.success && result.token) {
         setIsLoggedIn(true);
-        setUserId(result.userId);
-        showMessage(`登录成功！用户ID: ${result.userId}`, "success");
+        setUserId(result.userId || username);
+        showMessage(
+          `登录成功！用户ID: ${result.userId || username}`,
+          "success",
+        );
 
         // Auto test connection after login
         setTimeout(async () => {
           try {
-            const testResult = await configSyncAPI.testConnection(
-              result.userId!,
-            );
+            const testResult = await configSyncAPI.testConnection();
             if (testResult.success) {
               setIsConnected(true);
               setRemoteConfigCount(testResult.configCount || 0);
@@ -109,7 +110,7 @@ function ConfigSyncModal({
   };
 
   const handleTestConnection = async () => {
-    if (!isLoggedIn || !userId.trim()) {
+    if (!isLoggedIn) {
       showMessage("请先登录", "error");
       return;
     }
@@ -118,7 +119,7 @@ function ConfigSyncModal({
     setMessage("正在测试连接...");
 
     try {
-      const result = await configSyncAPI.testConnection(userId.trim());
+      const result = await configSyncAPI.testConnection();
 
       if (result.success) {
         setIsConnected(true);
@@ -138,7 +139,7 @@ function ConfigSyncModal({
   };
 
   const handleUpload = async () => {
-    if (!isLoggedIn || !userId.trim()) {
+    if (!isLoggedIn) {
       showMessage("请先登录", "error");
       return;
     }
@@ -148,7 +149,7 @@ function ConfigSyncModal({
 
     try {
       const providerList = Object.values(providers);
-      await configSyncAPI.syncConfigs(userId.trim(), providerList);
+      await configSyncAPI.syncConfigs(providerList);
 
       showMessage(`成功上传 ${providerList.length} 个配置`, "success");
       setRemoteConfigCount(providerList.length);
@@ -166,7 +167,7 @@ function ConfigSyncModal({
   };
 
   const handleDownload = async () => {
-    if (!isLoggedIn || !userId.trim()) {
+    if (!isLoggedIn) {
       showMessage("请先登录", "error");
       return;
     }
@@ -175,7 +176,7 @@ function ConfigSyncModal({
     setMessage("正在从云端下载配置...");
 
     try {
-      const remoteProviders = await configSyncAPI.getAllConfigs(userId.trim());
+      const remoteProviders = await configSyncAPI.getAllConfigs();
 
       if (remoteProviders.length === 0) {
         showMessage("云端没有配置，无需下载", "error");
@@ -210,7 +211,7 @@ function ConfigSyncModal({
   };
 
   const handleSmartSync = async () => {
-    if (!isLoggedIn || !userId.trim()) {
+    if (!isLoggedIn) {
       showMessage("请先登录", "error");
       return;
     }
@@ -220,7 +221,7 @@ function ConfigSyncModal({
 
     try {
       // 1. 获取远程配置
-      const remoteProviders = await configSyncAPI.getAllConfigs(userId.trim());
+      const remoteProviders = await configSyncAPI.getAllConfigs();
       const remoteMap = new Map<string, Provider>(
         remoteProviders.map((p) => [p.id, p]),
       );
@@ -259,7 +260,7 @@ function ConfigSyncModal({
 
       // 3. 上传合并后的配置到云端
       setMessage("正在上传合并后的配置...");
-      await configSyncAPI.syncConfigs(userId.trim(), merged);
+      await configSyncAPI.syncConfigs(merged);
 
       // 4. 更新本地配置
       showMessage(`智能同步完成！共 ${merged.length} 个配置`, "success");

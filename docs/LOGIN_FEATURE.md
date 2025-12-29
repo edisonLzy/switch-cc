@@ -67,10 +67,27 @@
 ## Implementation Details
 
 ### API Client Changes (`src/lib/config-sync-api.ts`)
-- Added `login()` method
-- Endpoint: `POST /v1/switch-cc/auth/login`
-- Request: `{ username: string, password: string }`
-- Response: `{ success: boolean, userId?: string, error?: string }`
+
+**Updated to use Bearer Token Authentication:**
+- Added `authToken` private property to store JWT token
+- Added `setAuthToken()`, `getAuthToken()`, `clearAuthToken()` methods
+- Added `getAuthHeaders()` method to include Authorization header
+- Updated `login()` method:
+  - Endpoint: `POST /v1/switch-cc/auth/login`
+  - Request: `{ username: string, password: string }`
+  - Response: `{ token: string, userId?: string }`
+  - Automatically stores token after successful login
+
+**API Endpoint Changes:**
+- `GET /v1/switch-cc/config/:providerId` (was `/configs/:providerId`)
+- `GET /v1/switch-cc/configs` (unchanged)
+- `POST /v1/switch-cc/config` (was `/configs`)
+- `DELETE /v1/switch-cc/config/:providerId` (was `/configs/:providerId`)
+
+**Method Signature Changes:**
+- All methods now use Bearer token from `authToken` property
+- Removed `userId` parameters from all methods (userId comes from token)
+- Methods: `getConfig(providerId)`, `getAllConfigs()`, `upsertConfig(provider)`, `syncConfigs(providers)`, `deleteConfig(providerId)`, `testConnection()`
 
 ### Modal Component Changes (`src/components/MainWindow/ConfigSyncModal.tsx`)
 
@@ -128,9 +145,10 @@ const handleLogin = async () => {
 ### Security Features
 1. Password input field uses `type="password"` for masking
 2. Enter key support for quick login
-3. Login required before any sync operations
-4. Username and userId displayed after login
-5. All sync operations check `isLoggedIn` state
+3. **Bearer Token Authentication** - JWT token stored and sent with all API requests
+4. Login required before any sync operations
+5. Username and userId displayed after login
+6. All sync operations check `isLoggedIn` state and require valid token
 
 ### User Experience
 1. Clear separation between login and sync interfaces
@@ -138,10 +156,13 @@ const handleLogin = async () => {
 3. User info prominently displayed when logged in
 4. Loading states for login process
 5. Error messages for failed login attempts
+6. Token automatically included in all authenticated requests
 
 ## Backend API Requirements
 
-The backend must implement the following endpoint:
+The backend uses **Bearer Token Authentication** with `authMiddleware`.
+
+### Authentication Endpoint
 
 **POST /v1/switch-cc/auth/login**
 
@@ -156,8 +177,8 @@ Request body:
 Success response:
 ```json
 {
-  "userId": "user_abc123",  // or "id": "user_abc123"
-  // optional: "token": "jwt_token"
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "userId": "user_abc123"
 }
 ```
 
@@ -168,24 +189,52 @@ Error response:
 }
 ```
 
+### All Other Endpoints (Authenticated)
+
+All sync endpoints require `Authorization: Bearer <token>` header:
+
+**GET /v1/switch-cc/config/:providerId**
+- Headers: `Authorization: Bearer <token>`
+- userId extracted from token by `authMiddleware`
+
+**GET /v1/switch-cc/configs**
+- Headers: `Authorization: Bearer <token>`
+- Returns all configs for authenticated user
+
+**POST /v1/switch-cc/config**
+- Headers: `Authorization: Bearer <token>`
+- Body: `{ providerId: string, config: object }`
+- userId automatically added from token
+
+**DELETE /v1/switch-cc/config/:providerId**
+- Headers: `Authorization: Bearer <token>`
+- userId extracted from token by `authMiddleware`
+
 ## Testing Checklist
 
 - [ ] Login with valid credentials
 - [ ] Login with invalid credentials
+- [ ] Token stored after successful login
+- [ ] Token sent with all authenticated requests
 - [ ] Auto-connection after login
 - [ ] Password field masking
 - [ ] Enter key to submit login
-- [ ] Upload requires login
-- [ ] Download requires login
-- [ ] Smart sync requires login
-- [ ] Error message display
+- [ ] Upload requires login and valid token
+- [ ] Download requires login and valid token
+- [ ] Smart sync requires login and valid token
+- [ ] Error message display for unauthorized requests
 - [ ] Loading state during login
 - [ ] Dark mode compatibility
 
 ## Migration Notes
 
-For existing users:
-- The userId is now obtained from login response
-- Username is stored in component state for display
-- No breaking changes to existing API endpoints
-- Sync operations work the same after login
+**Breaking Changes:**
+- All API methods now require Bearer token authentication
+- `userId` parameter removed from all API methods
+- API URLs changed from plural to singular (`/configs` → `/config`)
+- Login response now returns `token` which must be stored
+
+**For Frontend:**
+- Login must return and store JWT token
+- All API calls use token from `configSyncAPI.authToken`
+- No need to pass userId to API methods anymore
