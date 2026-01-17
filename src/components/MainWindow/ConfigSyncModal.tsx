@@ -5,6 +5,7 @@ import {
   RefreshCw,
   Loader2,
   LogIn,
+  LogOut,
 } from "lucide-react";
 import { Provider } from "../../types";
 import { configSyncAPI } from "../../lib/config-sync-api";
@@ -121,6 +122,23 @@ function ConfigSyncModal({
         "error",
       );
     }
+  };
+
+
+  const handleLogout = async () => {
+    try {
+      await configSyncAPI.logout();
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+    // Always clear local state
+    configSyncAPI.clearAuthToken();
+    setIsLoggedIn(false);
+    setEmail("");
+    setPassword("");
+    setUsername("");
+    setRemoteConfigCount(0);
+    showMessage("已登出", "success");
   };
 
 
@@ -381,7 +399,19 @@ function ConfigSyncModal({
                 )}
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex flex-col w-full gap-3">
+              <Button
+                onClick={handleLogout}
+                disabled={isLoading}
+                variant="neutral"
+                className="w-full"
+              >
+                <LogOut size={16} />
+                登出
+              </Button>
+            </div>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
