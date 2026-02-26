@@ -12,6 +12,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { JsonEditor } from "../ui/json-editor";
 import { Label } from "../ui/label";
+import { Badge } from "../ui/badge";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
@@ -78,7 +79,12 @@ function EditProviderModal({
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
-          <DialogTitle>编辑供应商 - {provider.name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            编辑供应商 - {provider.name}
+            <Badge variant={provider.providerType === "codex" ? "neutral" : "default"}>
+              {provider.providerType === "codex" ? "Codex" : "Claude"}
+            </Badge>
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">

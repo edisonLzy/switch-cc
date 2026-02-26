@@ -42,6 +42,7 @@ impl AppConfig {
                 website_url: Some("https://claude.ai".to_string()),
                 category: Some("official".to_string()),
                 created_at: Some(chrono::Utc::now().timestamp_millis() as u64),
+                provider_type: crate::provider::ProviderType::Claude,
             };
             self.providers
                 .insert("official".to_string(), official_provider);

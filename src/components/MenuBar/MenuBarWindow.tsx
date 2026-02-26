@@ -151,6 +151,9 @@ function MenuBarWindow() {
             <span className="text-sm font-heading text-foreground">
               当前: {currentProvider.name}
             </span>
+            <Badge variant={currentProvider.providerType === "codex" ? "neutral" : "default"} className="text-xs">
+              {currentProvider.providerType === "codex" ? "Codex" : "Claude"}
+            </Badge>
           </div>
           {currentProvider.websiteUrl && (
             <Button
@@ -204,15 +207,23 @@ function MenuBarWindow() {
                       <div className="w-4 h-4 flex-shrink-0" />
                     )}
                     <div className="min-w-0 flex-1 text-left">
-                      <p
-                        className={`text-sm font-heading truncate ${
-                          provider.id === currentProviderId
-                            ? "text-foreground"
-                            : "text-foreground"
-                        }`}
-                      >
-                        {provider.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p
+                          className={`text-sm font-heading truncate ${
+                            provider.id === currentProviderId
+                              ? "text-foreground"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {provider.name}
+                        </p>
+                        <Badge 
+                          variant={provider.providerType === "codex" ? "neutral" : "default"} 
+                          className="text-xs flex-shrink-0"
+                        >
+                          {provider.providerType === "codex" ? "Codex" : "Claude"}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
                   {provider.id !== currentProviderId && (

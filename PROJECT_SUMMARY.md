@@ -2,15 +2,16 @@
 
 ## 🎯 项目概述
 
-**Switch CC** 是一个专为 Claude Code 设计的配置管理工具，基于原始的 cc-switch 项目进行了定制化改造。该项目专注于 Claude Code 的供应商切换，移除了 Codex 相关功能，并新增了 MenuBar 快捷操作模式。
+**Switch CC** 是一个配置管理工具，支持 Claude Code 和 Codex 两种 AI 编程助手。基于原始的 cc-switch 项目进行了定制化改造，新增了 Codex 支持和 MenuBar 快捷操作模式。
 
 ## 🏗️ 核心特性
 
 ### ✅ 已实现功能
 
-1. **Claude Code 专属配置管理**
-   - 专门管理 `~/.claude/settings.json` 配置文件
-   - 支持多个 Claude API 供应商配置
+1. **多类型 AI 助手配置管理**
+   - 支持 Claude Code: 管理 `~/.claude/settings.json` 配置文件
+   - 支持 Codex: 管理 `~/.codex/config.json` 配置文件
+   - 支持多个 API 供应商配置
    - 安全的原子写入，防止配置损坏
 
 2. **双界面模式**
@@ -23,16 +24,14 @@
    - 跨平台支持（Windows、macOS、Linux）
 
 4. **预设供应商模板**
-   - Claude 官方
-   - 阿里云百炼
-   - 智谱清言  
-   - OpenRouter
-   - Together AI
+   - **Claude**: 智谱清言、AnyRouter、PackyCode
+   - **Codex**: OpenAI Codex、Azure OpenAI
 
 5. **用户体验优化**
    - 暗色主题支持
    - 响应式界面设计
    - 友好的错误处理和用户反馈
+   - 供应商类型标识（Claude/Codex）
 
 ### 🔧 技术架构
 
@@ -83,14 +82,15 @@ switch-cc/
 ## 🔄 与原项目的差异
 
 ### 移除的功能
-1. **Codex 支持** - 专注于 Claude Code，简化项目复杂度
-2. **VS Code 集成** - 移除 VS Code 设置同步功能
-3. **多应用切换** - 不再需要应用类型选择器
+1. **VS Code 集成** - 移除 VS Code 设置同步功能
+2. **多应用切换** - 不再需要应用类型选择器
 
 ### 新增的功能
-1. **MenuBar 模式** - 全新的简洁切换界面
-2. **模式切换** - 主界面和 MenuBar 间的无缝切换
-3. **优化的托盘菜单** - 更好的用户体验
+1. **Codex 支持** - 新增对 OpenAI Codex 和 Azure OpenAI 的支持
+2. **MenuBar 模式** - 全新的简洁切换界面
+3. **模式切换** - 主界面和 MenuBar 间的无缝切换
+4. **优化的托盘菜单** - 更好的用户体验
+5. **多供应商类型** - 支持 Claude 和 Codex 两种供应商类型
 
 ### 改进的功能
 1. **简化的配置流程** - 专注于 Claude 配置
@@ -142,19 +142,21 @@ pnpm format             # 代码格式化
 ## 🎯 使用场景
 
 ### 适用用户
-- Claude Code 用户
+- Claude Code 和 Codex 用户
 - 需要频繁切换 API 供应商的开发者
-- 使用多个 Claude API 服务的团队
+- 使用多个 AI 编程助手服务的团队
+- 需要在不同 AI 服务间切换的开发者
 
 ### 典型工作流
-1. 添加多个 Claude API 供应商配置
+1. 添加 Claude 和/或 Codex 供应商配置
 2. 根据需要切换供应商（通过主界面或 MenuBar）
-3. 重启 Claude Code 终端使配置生效
+3. 重启对应的终端/编辑器使配置生效
 4. 通过托盘菜单快速切换
 
 ## 🔮 未来规划
 
 ### 近期目标
+- [x] Codex 服务提供商支持
 - [ ] 配置文件加密存储
 - [ ] 配置导入/导出功能  
 - [ ] 自动更新检查
