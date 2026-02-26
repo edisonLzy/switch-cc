@@ -14,6 +14,7 @@ import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useKeyboardNavigation } from "../../hooks/useKeyboardNavigation";
+import { listen } from "@tauri-apps/api/event";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
@@ -66,6 +67,14 @@ function ProviderList({
     }
   }, [filteredProviders.length]);
 
+  // 滚动到选中的项
+  useEffect(() => {
+    const card = document.getElementById(`provider-card-${selectedIndex}`);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [selectedIndex]);
+
   // 使用键盘导航 hook
   useKeyboardNavigation({
     items: filteredProviders,
@@ -76,7 +85,19 @@ function ProviderList({
     getItemId: (provider) => provider.id,
     searchInputRef,
     enableSlashKey: true,
+    enableScrollToSelected: true,
   });
+
+  // 监听全局快捷键事件 (Cmd+/)
+  useEffect(() => {
+    const unlisten = listen("focus-search", () => {
+      searchInputRef.current?.focus();
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
 
   if (providerList.length === 0) {
     return (
@@ -106,7 +127,7 @@ function ProviderList({
           <Input
             ref={searchInputRef}
             type="text"
-            placeholder="搜索供应商..."
+            placeholder="搜索供应商... (↑/↓ 选择, Enter 切换)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
@@ -135,13 +156,12 @@ function ProviderList({
           {filteredProviders.map((provider, index) => (
             <Card
               key={provider.id}
-              className={`p-0 transition-all duration-200 cursor-pointer hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 ${
-                provider.id === currentProviderId
-                  ? "ring-4 ring-main"
-                  : index === selectedIndex
-                    ? "ring-2 ring-blue-500"
-                    : "hover:ring-2 hover:ring-border"
-              }`}
+              id={`provider-card-${index}`}
+              className={`p-0 transition-all duration-200 cursor-pointer ${
+                index === selectedIndex
+                  ? "shadow-[6px_6px_0px_0px] shadow-border -translate-x-1 -translate-y-1"
+                  : "hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 hover:ring-2 hover:ring-border"
+              } ${provider.id === currentProviderId ? "ring-4 ring-main" : ""}`}
             >
               <CardHeader className="p-4">
                 <div className="flex items-start justify-between">
