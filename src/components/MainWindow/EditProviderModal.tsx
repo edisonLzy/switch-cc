@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Provider } from "../../types";
-import { Save, Wand2 } from "lucide-react";
+import { Save, Wand2, Copy } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { Input } from "../ui/input";
 import { JsonEditor } from "../ui/json-editor";
 import { Label } from "../ui/label";
 import { useDarkMode } from "../../hooks/useDarkMode";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 interface EditProviderModalProps {
   provider: Provider;
@@ -45,6 +46,14 @@ function EditProviderModal({
     }
   };
 
+  const handleCopyConfig = async () => {
+    try {
+      await writeText(formData.configJson);
+    } catch (error) {
+      console.error("复制失败:", error);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -67,7 +76,7 @@ function EditProviderModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>编辑供应商 - {provider.name}</DialogTitle>
         </DialogHeader>
@@ -106,16 +115,28 @@ function EditProviderModal({
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="edit-config">配置 JSON *</Label>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleFormatJson}
-                  className="gap-2"
-                >
-                  <Wand2 size={14} />
-                  格式化
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleCopyConfig}
+                    className="gap-2"
+                  >
+                    <Copy size={14} />
+                    复制配置
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleFormatJson}
+                    className="gap-2"
+                  >
+                    <Wand2 size={14} />
+                    格式化
+                  </Button>
+                </div>
               </div>
               <JsonEditor
                 value={formData.configJson}

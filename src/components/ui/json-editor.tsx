@@ -33,6 +33,7 @@ export function JsonEditor({
         json(),
         isDarkMode ? oneDark : [],
         EditorView.editable.of(!readOnly),
+        EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChange(update.state.doc.toString());
@@ -47,15 +48,20 @@ export function JsonEditor({
               ? "#282c34"
               : "var(--secondary-background)",
             maxHeight: "400px",
-            overflow: "auto",
+            overflow: "hidden",
+            width: "100%",
           },
           ".cm-content": {
             fontFamily: "ui-monospace, monospace",
             minHeight: "200px",
+            overflowWrap: "break-word",
+            wordBreak: "break-word",
           },
           ".cm-scroller": {
             overflow: "auto",
             maxHeight: "400px",
+            overflowX: "auto",
+            overflowY: "auto",
           },
           ".cm-gutters": {
             backgroundColor: isDarkMode ? "#21252b" : "var(--background)",
