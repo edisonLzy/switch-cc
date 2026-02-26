@@ -25,7 +25,14 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "clipboard-manager:default",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }
 

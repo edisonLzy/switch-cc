@@ -9,8 +9,9 @@ use store::AppState;
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 #[cfg(target_os = "macos")]
 use tauri::RunEvent;
@@ -174,6 +175,8 @@ pub fn run() {
         })
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // 注册 Updater 插件（如果配置）
@@ -225,6 +228,21 @@ pub fn run() {
                 .icon(app.default_window_icon().unwrap().clone());
 
             let _tray = tray_builder.build(app)?;
+
+            // 注册全局快捷键 Cmd+/
+            {
+                let shortcut: Shortcut = "CmdOrCtrl+/".parse().unwrap();
+                app.global_shortcut()
+                    .on_shortcut(shortcut, |app, _shortcut, _event| {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.emit("focus-search", ());
+                            let _ = window.set_focus();
+                        }
+                    })
+                    .unwrap_or_else(|e| {
+                        log::warn!("注册全局快捷键失败: {}", e);
+                    });
+            }
 
             // 注入全局状态
             app.manage(app_state);

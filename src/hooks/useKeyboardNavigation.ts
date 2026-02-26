@@ -9,6 +9,7 @@ interface UseKeyboardNavigationProps<T> {
   getItemId?: (item: T) => string;
   searchInputRef?: RefObject<HTMLInputElement>;
   enableSlashKey?: boolean;
+  enableScrollToSelected?: boolean;
 }
 
 /**
@@ -21,6 +22,7 @@ interface UseKeyboardNavigationProps<T> {
  * @param getItemId - 获取项 ID 的函数
  * @param searchInputRef - 搜索框的 ref（用于 "/" 键聚焦）
  * @param enableSlashKey - 是否启用 "/" 键聚焦搜索框（默认 false）
+ * @param enableScrollToSelected - 是否启用滚动到选中项（默认 false）
  */
 export function useKeyboardNavigation<T>({
   items,
@@ -31,10 +33,25 @@ export function useKeyboardNavigation<T>({
   getItemId,
   searchInputRef,
   enableSlashKey = false,
+  enableScrollToSelected = false,
 }: UseKeyboardNavigationProps<T>) {
+  // 滚动到选中的项
+  useEffect(() => {
+    if (!enableScrollToSelected) return;
+
+    const scrollToSelected = () => {
+      const card = document.getElementById(`provider-card-${selectedIndex}`);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+    };
+
+    scrollToSelected();
+  }, [selectedIndex, enableScrollToSelected]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // "/" 键聚焦搜索框（仅在启用时且搜索框未聚焦时）
+      // "/" 键聚焦搜索框
       if (
         enableSlashKey &&
         e.key === "/" &&
@@ -46,35 +63,37 @@ export function useKeyboardNavigation<T>({
         return;
       }
 
-      // 当搜索框存在且有焦点时，不处理方向键
-      if (
+      // 搜索框有焦点时，也处理方向键和回车键
+      const isSearchFocused =
         searchInputRef?.current &&
-        document.activeElement === searchInputRef.current
-      ) {
-        return;
-      }
+        document.activeElement === searchInputRef.current;
 
-      // 方向键导航
+      // 方向键导航（无论搜索框是否有焦点都处理，支持循环）
       if (e.key === "ArrowDown") {
         e.preventDefault();
         setSelectedIndex(
-          selectedIndex < items.length - 1 ? selectedIndex + 1 : selectedIndex,
+          selectedIndex >= items.length - 1 ? 0 : selectedIndex + 1,
         );
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex(selectedIndex > 0 ? selectedIndex - 1 : selectedIndex);
+        setSelectedIndex(
+          selectedIndex <= 0 ? items.length - 1 : selectedIndex - 1,
+        );
       } else if (e.key === "Enter" && items.length > 0) {
-        e.preventDefault();
-        const selectedItem = items[selectedIndex];
-        if (selectedItem) {
-          // 如果提供了 currentItemId 和 getItemId，则检查是否是当前项
-          if (currentItemId && getItemId) {
-            const itemId = getItemId(selectedItem);
-            if (itemId !== currentItemId) {
+        // 只有当不是搜索框聚焦时，或者搜索框聚焦但有选中项时
+        if (!isSearchFocused || selectedIndex >= 0) {
+          e.preventDefault();
+          const selectedItem = items[selectedIndex];
+          if (selectedItem) {
+            // 如果提供了 currentItemId 和 getItemId，则检查是否是当前项
+            if (currentItemId && getItemId) {
+              const itemId = getItemId(selectedItem);
+              if (itemId !== currentItemId) {
+                onSelect?.(selectedItem);
+              }
+            } else {
               onSelect?.(selectedItem);
             }
-          } else {
-            onSelect?.(selectedItem);
           }
         }
       }

@@ -16,14 +16,18 @@ interface BackendConfig {
  */
 export class ConfigSyncAPI {
   private baseUrl: string;
-  private authToken: string | null = null;
+  private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+  private isRefreshing = false;
+  private refreshSubscribers: ((token: string) => void)[] = [];
 
   constructor() {
     // Get API base URL from environment variable
     this.baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
     
     // Initialize token from localStorage
-    this.authToken = localStorage.getItem("switch_cc_sync_token");
+    this.accessToken = localStorage.getItem("switch_cc_sync_token");
+    this.refreshToken = localStorage.getItem("switch_cc_sync_refresh_token");
   }
 
   /**
@@ -47,24 +51,31 @@ export class ConfigSyncAPI {
   /**
    * 设置认证令牌
    */
-  setAuthToken(token: string): void {
-    this.authToken = token;
-    localStorage.setItem("switch_cc_sync_token", token);
+  setAuthToken(accessToken: string, refreshToken?: string): void {
+    this.accessToken = accessToken;
+    localStorage.setItem("switch_cc_sync_token", accessToken);
+    
+    if (refreshToken) {
+      this.refreshToken = refreshToken;
+      localStorage.setItem("switch_cc_sync_refresh_token", refreshToken);
+    }
   }
 
   /**
    * 获取认证令牌
    */
   getAuthToken(): string | null {
-    return this.authToken;
+    return this.accessToken;
   }
 
   /**
    * 清除认证令牌和用户信息
    */
   clearAuthToken(): void {
-    this.authToken = null;
+    this.accessToken = null;
+    this.refreshToken = null;
     localStorage.removeItem("switch_cc_sync_token");
+    localStorage.removeItem("switch_cc_sync_refresh_token");
     localStorage.removeItem("switch_cc_sync_email");
     localStorage.removeItem("switch_cc_sync_username");
   }
@@ -77,8 +88,8 @@ export class ConfigSyncAPI {
       "Content-Type": "application/json",
     };
 
-    if (this.authToken) {
-      headers["Authorization"] = `Bearer ${this.authToken}`;
+    if (this.accessToken) {
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
 
     return headers;
@@ -98,6 +109,123 @@ export class ConfigSyncAPI {
   }
 
   /**
+   * 通用请求方法，处理 Token 刷新
+   */
+  private async request(url: string, options: RequestInit = {}): Promise<Response> {
+    const doRequest = async (token?: string) => {
+      const headers = {
+        ...this.getAuthHeaders(),
+        ...(options.headers as Record<string, string>),
+      };
+      
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      return fetch(url, {
+        ...options,
+        headers,
+      });
+    };
+
+    try {
+      const response = await doRequest();
+
+      // 如果是 401 且即使有 Token，尝试刷新
+      if (response.status === 401 && this.refreshToken) {
+        if (!this.isRefreshing) {
+          this.isRefreshing = true;
+          try {
+            const newTokens = await this.refreshAuthToken();
+            this.isRefreshing = false;
+            this.onRefreshed(newTokens.accessToken);
+            return doRequest(newTokens.accessToken);
+          } catch (error) {
+            this.isRefreshing = false;
+            this.clearAuthToken();
+            throw error;
+          }
+        } else {
+          // 如果正在刷新，等待刷新完成
+          return new Promise((resolve) => {
+            this.subscribeTokenRefresh((token) => {
+              resolve(doRequest(token));
+            });
+          });
+        }
+      }
+
+      return response;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  private subscribeTokenRefresh(cb: (token: string) => void) {
+    this.refreshSubscribers.push(cb);
+  }
+
+  private onRefreshed(token: string) {
+    this.refreshSubscribers.forEach((cb) => cb(token));
+    this.refreshSubscribers = [];
+  }
+
+  /**
+   * 刷新 Token
+   */
+  private async refreshAuthToken(): Promise<{ accessToken: string; refreshToken: string }> {
+    console.log("[ConfigSyncAPI] 正在刷新 Token...");
+    const url = `${this.baseUrl}/v1/auth/refresh`;
+    
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refreshToken: this.refreshToken }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to refresh token");
+      }
+
+      const result = await response.json();
+      const { accessToken, refreshToken } = result.data;
+      
+      this.setAuthToken(accessToken, refreshToken);
+      console.log("[ConfigSyncAPI] Token 刷新成功");
+      
+      return { accessToken, refreshToken };
+    } catch (error) {
+      console.error("[ConfigSyncAPI] Token 刷新失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 登出
+   */
+  async logout(): Promise<void> {
+    if (this.refreshToken) {
+      try {
+        const url = `${this.baseUrl}/v1/auth/logout`;
+        // 不等待结果，直接清除本地状态
+        fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ refreshToken: this.refreshToken }),
+        }).catch(e => console.error("Logout API call failed", e));
+      } catch (error) {
+        console.error("[ConfigSyncAPI] 登出请求失败:", error);
+      }
+    }
+    this.clearAuthToken();
+  }
+
+  /**
    * 获取单个供应商配置
    */
   async getConfig(providerId: string): Promise<Provider | null> {
@@ -105,9 +233,8 @@ export class ConfigSyncAPI {
       const url = `${this.baseUrl}/v1/switch-cc/config/${providerId}`;
       console.log("[ConfigSyncAPI] 获取配置:", url);
 
-      const response = await fetch(url, {
+      const response = await this.request(url, {
         method: "GET",
-        headers: this.getAuthHeaders(),
       });
 
       if (response.status === 404) {
@@ -138,9 +265,8 @@ export class ConfigSyncAPI {
       const url = `${this.baseUrl}/v1/switch-cc/configs`;
       console.log("[ConfigSyncAPI] 获取所有配置:", url);
 
-      const response = await fetch(url, {
+      const response = await this.request(url, {
         method: "GET",
-        headers: this.getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -167,9 +293,8 @@ export class ConfigSyncAPI {
       const url = `${this.baseUrl}/v1/switch-cc/config`;
       console.log("[ConfigSyncAPI] 创建/更新配置:", url);
 
-      const response = await fetch(url, {
+      const response = await this.request(url, {
         method: "POST",
-        headers: this.getAuthHeaders(),
         body: JSON.stringify({
           providerId: provider.id,
           config: {
@@ -218,9 +343,8 @@ export class ConfigSyncAPI {
       const url = `${this.baseUrl}/v1/switch-cc/config/${providerId}`;
       console.log("[ConfigSyncAPI] 删除配置:", url);
 
-      const response = await fetch(url, {
+      const response = await this.request(url, {
         method: "DELETE",
-        headers: this.getAuthHeaders(),
       });
 
       if (!response.ok) {
@@ -294,18 +418,17 @@ export class ConfigSyncAPI {
       const result = await response.json();
       console.log("[ConfigSyncAPI] 登录成功");
 
-      // 解析嵌套的响应结构: { code, data: { user, token } }
-      const token = result.data?.token;
+      const accessToken = result.data?.accessToken;
+      const refreshToken = result.data?.refreshToken;
       const username = result.data?.user?.username;
 
-      // Store the auth token
-      if (token) {
-        this.setAuthToken(token);
+      if (accessToken) {
+        this.setAuthToken(accessToken, refreshToken);
       }
 
       return {
         success: true,
-        token: token,
+        token: accessToken,
         username: username,
       };
     } catch (error) {
