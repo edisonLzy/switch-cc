@@ -229,9 +229,9 @@ pub fn run() {
 
             let _tray = tray_builder.build(app)?;
 
-            // 注册全局快捷键 Cmd+/
+            // 注册全局快捷键 Ctrl+Shift+/
             {
-                let shortcut: Shortcut = "CmdOrCtrl+/".parse().unwrap();
+                let shortcut: Shortcut = "Ctrl+Shift+/".parse().unwrap();
                 app.global_shortcut()
                     .on_shortcut(shortcut, |app, _shortcut, _event| {
                         if let Some(window) = app.get_webview_window("main") {

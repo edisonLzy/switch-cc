@@ -88,7 +88,7 @@ function ProviderList({
     enableScrollToSelected: true,
   });
 
-  // 监听全局快捷键事件 (Cmd+/)
+  // 监听全局快捷键事件 (Ctrl+Shift+/)
   useEffect(() => {
     const unlisten = listen("focus-search", () => {
       searchInputRef.current?.focus();
