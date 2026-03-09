@@ -20,8 +20,8 @@ interface UseKeyboardNavigationProps<T> {
  * @param onSelect - 选中项时的回调函数（按 Enter 时触发）
  * @param currentItemId - 当前激活项的 ID（用于防止重复选择）
  * @param getItemId - 获取项 ID 的函数
- * @param searchInputRef - 搜索框的 ref（用于 "/" 键聚焦）
- * @param enableSlashKey - 是否启用 "/" 键聚焦搜索框（默认 false）
+ * @param searchInputRef - 搜索框的 ref（用于 Ctrl+Shift+/ 键聚焦）
+ * @param enableSlashKey - 是否启用 Ctrl+Shift+/ 键聚焦搜索框（默认 false）
  * @param enableScrollToSelected - 是否启用滚动到选中项（默认 false）
  */
 export function useKeyboardNavigation<T>({
@@ -51,9 +51,11 @@ export function useKeyboardNavigation<T>({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // "/" 键聚焦搜索框
+      // Ctrl+Shift+/ 键聚焦搜索框
       if (
         enableSlashKey &&
+        e.ctrlKey &&
+        e.shiftKey &&
         e.key === "/" &&
         searchInputRef?.current &&
         document.activeElement !== searchInputRef.current
