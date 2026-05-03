@@ -363,9 +363,13 @@ function MainWindow() {
             <UpdateBadge onClick={() => setIsSettingsOpen(true)} />
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 isolate">
             <div
-              className="flex min-w-0 cursor-pointer items-center gap-2 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow transition-transform hover:-translate-x-1 hover:-translate-y-1"
+              className={`relative z-0 flex min-w-0 cursor-pointer items-center gap-2 rounded-base border-2 px-3 py-2 text-slate-900 shadow-shadow transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+                apiGatewayStatus?.enabled
+                  ? "gateway-rainbow-border border-sky-500 bg-sky-100 hover:bg-sky-200"
+                  : "border-border bg-sky-100 hover:bg-sky-200"
+              }`}
               onClick={() => setIsApiGatewayLogOpen(true)}
               role="button"
               tabIndex={0}
@@ -387,15 +391,8 @@ function MainWindow() {
                 onClick={(event) => event.stopPropagation()}
                 onCheckedChange={(checked) => handleToggleApiGateway(checked === true)}
                 aria-label="启用 API Gateway"
-                className="shrink-0"
+                className="shrink-0 border-gray-600 bg-white"
               />
-              <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-foreground/75">
-                <span className="truncate font-mono text-[12px] text-foreground">
-                  {apiGatewayStatus?.enabled
-                    ? apiGatewayStatus.localBaseUrl
-                    : ""}
-                </span>
-              </div>
             </div>
             <Button
               onClick={() => setIsAddModalOpen(true)}

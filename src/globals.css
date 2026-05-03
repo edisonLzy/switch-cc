@@ -189,3 +189,49 @@ select:focus-visible,
   background-color: var(--main);
   color: var(--main-foreground);
 }
+
+.gateway-rainbow-border {
+  isolation: isolate;
+}
+
+.gateway-rainbow-border::before,
+.gateway-rainbow-border::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: calc(0.5rem + 3px);
+  background: linear-gradient(
+    45deg,
+    #0ea5e9,
+    #2563eb,
+    #06b6d4,
+    #22c55e,
+    #fde047,
+    #f97316,
+    #0ea5e9
+  );
+  background-size: 300% 300%;
+  z-index: -2;
+  animation: gateway-rainbow-flow 12s linear infinite;
+}
+
+.gateway-rainbow-border::after {
+  inset: -1px;
+  filter: blur(16px);
+  opacity: 0.5;
+  z-index: -3;
+}
+
+@keyframes gateway-rainbow-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
