@@ -39,7 +39,7 @@ struct RouteState {
 
 #[derive(Debug, Clone, Default)]
 struct UpstreamAuth {
-    headers: Vec<GatewayAuthHeader>,
+    strategies: Vec<GatewayAuthStrategy>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +62,18 @@ struct GatewayModelRoute {
 struct GatewayAuthHeader {
     name: String,
     value: String,
+}
+
+#[derive(Debug, Clone)]
+struct GatewayAuthQueryParam {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Clone)]
+enum GatewayAuthStrategy {
+    Header(GatewayAuthHeader),
+    Query(GatewayAuthQueryParam),
 }
 
 #[derive(Default)]
@@ -169,10 +181,27 @@ fn read_env_value(provider: &Provider, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn resolve_auth_value(provider: &Provider, entry: &Value) -> Option<String> {
+    let value = entry
+        .get("value")
+        .and_then(|item| item.as_str())
+        .map(str::to_string);
+    let env_var = entry
+        .get("envVar")
+        .and_then(|item| item.as_str())
+        .map(str::trim);
+
+    match (value, env_var) {
+        (Some(value), _) if !value.trim().is_empty() => Some(value),
+        (_, Some(env_var)) if !env_var.is_empty() => read_env_value(provider, env_var),
+        _ => None,
+    }
+}
+
 fn configured_upstream_auth(provider: &Provider) -> UpstreamAuth {
-    let mut headers = configured_custom_auth_headers(provider);
-    if !headers.is_empty() {
-        return UpstreamAuth { headers };
+    let mut strategies = configured_custom_auth_strategies(provider);
+    if !strategies.is_empty() {
+        return UpstreamAuth { strategies };
     }
 
     let target_base_url = provider_target_base_url(provider).unwrap_or_default();
@@ -180,36 +209,71 @@ fn configured_upstream_auth(provider: &Provider) -> UpstreamAuth {
     let is_minimax = target_base_url.contains("api.minimaxi.com");
 
     if let Some(api_key) = read_env_value(provider, "ANTHROPIC_API_KEY") {
-        headers.push(GatewayAuthHeader {
+        strategies.push(GatewayAuthStrategy::Header(GatewayAuthHeader {
             name: AUTHORIZATION.as_str().to_string(),
             value: format!("Bearer {api_key}"),
-        });
+        }));
         if !is_minimax {
-            headers.push(GatewayAuthHeader {
+            strategies.push(GatewayAuthStrategy::Header(GatewayAuthHeader {
                 name: "x-api-key".to_string(),
                 value: api_key,
-            });
+            }));
         }
     } else if let Some(auth_token) = read_env_value(provider, "ANTHROPIC_AUTH_TOKEN") {
-        headers.push(GatewayAuthHeader {
+        strategies.push(GatewayAuthStrategy::Header(GatewayAuthHeader {
             name: AUTHORIZATION.as_str().to_string(),
             value: format!("Bearer {auth_token}"),
-        });
+        }));
         if !is_official_anthropic && !is_minimax {
-            headers.push(GatewayAuthHeader {
+            strategies.push(GatewayAuthStrategy::Header(GatewayAuthHeader {
                 name: "x-api-key".to_string(),
                 value: auth_token,
-            });
+            }));
         }
     }
 
-    UpstreamAuth { headers }
+    UpstreamAuth { strategies }
 }
 
-fn configured_custom_auth_headers(provider: &Provider) -> Vec<GatewayAuthHeader> {
-    provider
-        .settings_config
-        .get("apiGateway")
+fn configured_custom_auth_strategies(provider: &Provider) -> Vec<GatewayAuthStrategy> {
+    let api_gateway = provider.settings_config.get("apiGateway");
+    let mut strategies = api_gateway
+        .and_then(|value| value.get("auth"))
+        .and_then(|value| value.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let strategy_type = entry
+                        .get("type")
+                        .and_then(|item| item.as_str())
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or("header");
+                    let name = entry.get("name")?.as_str()?.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+
+                    let value = resolve_auth_value(provider, entry)?;
+
+                    match strategy_type {
+                        "header" => Some(GatewayAuthStrategy::Header(GatewayAuthHeader {
+                            name: name.to_string(),
+                            value,
+                        })),
+                        "query" => Some(GatewayAuthStrategy::Query(GatewayAuthQueryParam {
+                            name: name.to_string(),
+                            value,
+                        })),
+                        _ => None,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    let legacy_header_strategies = api_gateway
         .and_then(|value| value.get("authHeaders"))
         .and_then(|value| value.as_array())
         .map(|headers| {
@@ -221,23 +285,18 @@ fn configured_custom_auth_headers(provider: &Provider) -> Vec<GatewayAuthHeader>
                         return None;
                     }
 
-                    let value = entry.get("value").and_then(|item| item.as_str()).map(str::to_string);
-                    let env_var = entry.get("envVar").and_then(|item| item.as_str()).map(str::trim);
-
-                    let resolved = match (value, env_var) {
-                        (Some(value), _) if !value.trim().is_empty() => Some(value),
-                        (_, Some(env_var)) if !env_var.is_empty() => read_env_value(provider, env_var),
-                        _ => None,
-                    }?;
-
-                    Some(GatewayAuthHeader {
+                    let value = resolve_auth_value(provider, entry)?;
+                    Some(GatewayAuthStrategy::Header(GatewayAuthHeader {
                         name: name.to_string(),
-                        value: resolved,
-                    })
+                        value,
+                    }))
                 })
-                .collect()
+                .collect::<Vec<_>>()
         })
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    strategies.extend(legacy_header_strategies);
+    strategies
 }
 
 fn build_provider_route_config(provider: &Provider) -> Result<ProviderRouteConfig, String> {
@@ -638,7 +697,7 @@ async fn forward_request(
         .map(|route| route.upstream_auth.clone())
         .unwrap_or(default_upstream_auth);
 
-    let target_url = build_target_url(&target_base_url, &uri)?;
+    let target_url = apply_upstream_auth_query_params(build_target_url(&target_base_url, &uri)?, &upstream_auth);
     let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
         .map_err(|e| format!("不支持的 HTTP 方法: {}", e))?;
 
@@ -719,11 +778,25 @@ fn apply_upstream_auth_headers(
     mut request_builder: reqwest::RequestBuilder,
     upstream_auth: &UpstreamAuth,
 ) -> reqwest::RequestBuilder {
-    for header in &upstream_auth.headers {
-        request_builder = request_builder.header(&header.name, &header.value);
+    for strategy in &upstream_auth.strategies {
+        if let GatewayAuthStrategy::Header(header) = strategy {
+            request_builder = request_builder.header(&header.name, &header.value);
+        }
     }
 
     request_builder
+}
+
+fn apply_upstream_auth_query_params(mut target_url: Url, upstream_auth: &UpstreamAuth) -> Url {
+    for strategy in &upstream_auth.strategies {
+        if let GatewayAuthStrategy::Query(param) = strategy {
+            target_url
+                .query_pairs_mut()
+                .append_pair(&param.name, &param.value);
+        }
+    }
+
+    target_url
 }
 
 fn should_skip_request_header(name: &axum::http::HeaderName) -> bool {
@@ -862,9 +935,14 @@ mod tests {
         let provider = test_provider();
         let auth = configured_upstream_auth(&provider);
 
-        assert_eq!(auth.headers.len(), 1);
-        assert_eq!(auth.headers[0].name, "authorization");
-        assert_eq!(auth.headers[0].value, "Bearer sk-test");
+        assert_eq!(auth.strategies.len(), 1);
+        match &auth.strategies[0] {
+            GatewayAuthStrategy::Header(header) => {
+                assert_eq!(header.name, "authorization");
+                assert_eq!(header.value, "Bearer sk-test");
+            }
+            _ => panic!("expected header auth strategy"),
+        }
     }
 
     #[test]
@@ -873,10 +951,10 @@ mod tests {
         let request = apply_upstream_auth_headers(
             client.get("https://example.com"),
             &UpstreamAuth {
-                headers: vec![GatewayAuthHeader {
+                strategies: vec![GatewayAuthStrategy::Header(GatewayAuthHeader {
                     name: AUTHORIZATION.as_str().to_string(),
                     value: "Bearer sk-test".to_string(),
-                }],
+                })],
             },
         )
         .build()
@@ -917,8 +995,48 @@ mod tests {
         };
 
         let auth = configured_upstream_auth(&provider);
-        assert_eq!(auth.headers.len(), 1);
-        assert_eq!(auth.headers[0].name, "x-custom-token");
-        assert_eq!(auth.headers[0].value, "abc123");
+        assert_eq!(auth.strategies.len(), 1);
+        match &auth.strategies[0] {
+            GatewayAuthStrategy::Header(header) => {
+                assert_eq!(header.name, "x-custom-token");
+                assert_eq!(header.value, "abc123");
+            }
+            _ => panic!("expected header auth strategy"),
+        }
+    }
+
+    #[test]
+    fn custom_auth_strategies_support_query_params() {
+        let provider = Provider {
+            id: "query-auth".to_string(),
+            name: "Query Auth".to_string(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://example.com/anthropic",
+                    "ACCESS_TOKEN": "q-token"
+                },
+                "apiGateway": {
+                    "auth": [
+                        {"type": "query", "name": "access_token", "envVar": "ACCESS_TOKEN"}
+                    ]
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        let auth = configured_upstream_auth(&provider);
+        assert_eq!(auth.strategies.len(), 1);
+        match &auth.strategies[0] {
+            GatewayAuthStrategy::Query(param) => {
+                assert_eq!(param.name, "access_token");
+                assert_eq!(param.value, "q-token");
+            }
+            _ => panic!("expected query auth strategy"),
+        }
+
+        let url = apply_upstream_auth_query_params(Url::parse("https://example.com/v1/messages").unwrap(), &auth);
+        assert_eq!(url.as_str(), "https://example.com/v1/messages?access_token=q-token");
     }
 }

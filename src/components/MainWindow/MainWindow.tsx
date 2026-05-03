@@ -365,7 +365,7 @@ function MainWindow() {
 
           <div className="flex items-center gap-4">
             <div
-              className="flex cursor-pointer items-center gap-3 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow transition-transform hover:-translate-x-1 hover:-translate-y-1"
+              className="flex min-w-0 cursor-pointer items-center gap-2 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow transition-transform hover:-translate-x-1 hover:-translate-y-1"
               onClick={() => setIsApiGatewayLogOpen(true)}
               role="button"
               tabIndex={0}
@@ -377,8 +377,8 @@ function MainWindow() {
               }}
               aria-label="查看 API Gateway 日志"
             >
-              <div className="flex items-center gap-2">
-                <Waypoints size={16} />
+              <div className="flex shrink-0 items-center gap-2">
+                <Waypoints size={15} />
                 <span className="text-sm font-medium">API Gateway</span>
               </div>
               <Checkbox
@@ -387,14 +387,14 @@ function MainWindow() {
                 onClick={(event) => event.stopPropagation()}
                 onCheckedChange={(checked) => handleToggleApiGateway(checked === true)}
                 aria-label="启用 API Gateway"
+                className="shrink-0"
               />
-              <div className="min-w-0 text-xs leading-5 text-foreground opacity-80">
-                <div>
+              <div className="flex min-w-0 flex-1 items-center gap-2 text-xs text-foreground/75">
+                <span className="truncate font-mono text-[12px] text-foreground">
                   {apiGatewayStatus?.enabled
-                    ? `本地: ${apiGatewayStatus.localBaseUrl}`
-                    : "关闭后直连当前供应商"}
-                </div>
-                <div className="truncate">点击查看实时日志</div>
+                    ? apiGatewayStatus.localBaseUrl
+                    : ""}
+                </span>
               </div>
             </div>
             <Button
