@@ -1,3 +1,4 @@
+mod api_gateway;
 mod commands;
 mod config;
 mod menubar;
@@ -211,8 +212,50 @@ pub fn run() {
             // 保存配置
             let _ = app_state.save();
 
+            app.manage(app_state);
+
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Some(app_state) = app_handle.try_state::<AppState>() {
+                        let (gateway_config, provider) = {
+                            let config = match app_state.config.lock() {
+                                Ok(config) => config,
+                                Err(error) => {
+                                    log::error!("读取 API Gateway 启动配置失败: {}", error);
+                                    return;
+                                }
+                            };
+                            let provider = config.providers.get(&config.current).cloned();
+                            (config.api_gateway.clone(), provider)
+                        };
+
+                        if gateway_config.enabled {
+                            if let Some(provider) = provider {
+                                if let Err(error) = api_gateway::start_or_update(
+                                    app_state.inner(),
+                                    &provider,
+                                    gateway_config.port,
+                                )
+                                .await
+                                {
+                                    log::error!("启动 API Gateway 失败: {}", error);
+                                } else if let Err(error) = config::merge_claude_config(
+                                    &api_gateway::build_gateway_provider_config(
+                                        &provider,
+                                        gateway_config.port,
+                                    ),
+                                ) {
+                                    log::error!("同步 API Gateway Claude 配置失败: {}", error);
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+
             // 创建动态托盘菜单
-            let menu = create_tray_menu(&app.handle(), &app_state)?;
+            let menu = create_tray_menu(&app.handle(), app.state::<AppState>().inner())?;
 
             // 构建托盘
             let tray_builder = TrayIconBuilder::with_id("main")
@@ -243,9 +286,6 @@ pub fn run() {
                         log::warn!("注册全局快捷键失败: {}", e);
                     });
             }
-
-            // 注入全局状态
-            app.manage(app_state);
 
             // 确保 MenuBar 窗口在启动时隐藏
             if let Some(menubar_window) = app.get_webview_window("menubar") {
@@ -292,6 +332,8 @@ pub fn run() {
             commands::show_menubar,
             commands::hide_menubar,
             commands::launch_claude_with_provider,
+            commands::get_api_gateway_status,
+            commands::set_api_gateway_enabled,
             update_tray_menu,
         ]);
 

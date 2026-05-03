@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Provider } from "../../types";
+import { ApiGatewayStatus, Provider } from "../../types";
 import ProviderList from "./ProviderList";
 import AddProviderModal from "./AddProviderModal";
 import EditProviderModal from "./EditProviderModal";
@@ -8,8 +8,9 @@ import SettingsModal from "./SettingsModal";
 import ClaudeConfigModal from "./ClaudeConfigModal";
 import ConfigSyncModal from "./ConfigSyncModal";
 import { UpdateBadge } from "./UpdateBadge";
-import { Plus, Settings, Moon, Sun, Eye, Cloud } from "lucide-react";
+import { Plus, Settings, Moon, Sun, Eye, Cloud, Waypoints } from "lucide-react";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { useDarkMode } from "../../hooks/useDarkMode";
 import { extractErrorMessage } from "../../utils/errorUtils";
 import { api } from "../../lib/tauri-api";
@@ -36,6 +37,8 @@ function MainWindow() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [apiGatewayStatus, setApiGatewayStatus] = useState<ApiGatewayStatus | null>(null);
+  const [isApiGatewayPending, setIsApiGatewayPending] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
@@ -107,10 +110,14 @@ function MainWindow() {
 
   const loadProviders = async () => {
     try {
-      const loadedProviders = await api.getProviders();
-      const currentId = await api.getCurrentProvider();
+      const [loadedProviders, currentId, gatewayStatus] = await Promise.all([
+        api.getProviders(),
+        api.getCurrentProvider(),
+        api.getApiGatewayStatus(),
+      ]);
       setProviders(loadedProviders);
       setCurrentProviderId(currentId);
+      setApiGatewayStatus(gatewayStatus);
 
       // 如果供应商列表为空，尝试自动从 live 导入一条默认供应商
       if (Object.keys(loadedProviders).length === 0) {
@@ -194,8 +201,12 @@ function MainWindow() {
       const success = await api.switchProvider(id);
       if (success) {
         setCurrentProviderId(id);
+        const gatewayStatus = await api.getApiGatewayStatus();
+        setApiGatewayStatus(gatewayStatus);
         showNotification(
-          "切换成功！请重启 Claude Code 终端以生效",
+          gatewayStatus.enabled
+            ? "切换成功，API Gateway 已更新到目标供应商"
+            : "切换成功！请重启 Claude Code 终端以生效",
           "success",
           2000,
         );
@@ -208,6 +219,27 @@ function MainWindow() {
       console.error("切换供应商失败:", error);
       const errorMessage = extractErrorMessage(error);
       showNotification(`切换失败：${errorMessage}`, "error");
+    }
+  };
+
+  const handleToggleApiGateway = async (checked: boolean) => {
+    try {
+      setIsApiGatewayPending(true);
+      const status = await api.setApiGatewayEnabled(checked);
+      setApiGatewayStatus(status);
+      showNotification(
+        checked
+          ? `API Gateway 已启动，本地地址 ${status.localBaseUrl}`
+          : "API Gateway 已关闭，已恢复直连供应商",
+        "success",
+        2500,
+      );
+    } catch (error) {
+      console.error("切换 API Gateway 失败:", error);
+      const errorMessage = extractErrorMessage(error);
+      showNotification(`API Gateway 操作失败：${errorMessage}`, "error");
+    } finally {
+      setIsApiGatewayPending(false);
     }
   };
 
@@ -304,6 +336,32 @@ function MainWindow() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow">
+              <div className="flex items-center gap-2">
+                <Waypoints size={16} />
+                <span className="text-sm font-medium">API Gateway</span>
+              </div>
+              <Checkbox
+                checked={apiGatewayStatus?.enabled ?? false}
+                disabled={isApiGatewayPending || Object.keys(providers).length === 0}
+                onCheckedChange={(checked) =>
+                  handleToggleApiGateway(checked === true)
+                }
+                aria-label="启用 API Gateway"
+              />
+              <div className="min-w-0 text-xs leading-5 text-foreground opacity-80">
+                <div>
+                  {apiGatewayStatus?.enabled
+                    ? `本地: ${apiGatewayStatus.localBaseUrl}`
+                    : "关闭后直连当前供应商"}
+                </div>
+                {apiGatewayStatus?.enabled && apiGatewayStatus.targetProviderName && (
+                  <div className="truncate">
+                    目标: {apiGatewayStatus.targetProviderName}
+                  </div>
+                )}
+              </div>
+            </div>
             <Button
               onClick={() => setIsAddModalOpen(true)}
               className="inline-flex items-center gap-2"

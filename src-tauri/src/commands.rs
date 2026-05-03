@@ -1,9 +1,32 @@
+use crate::api_gateway;
 use crate::config;
 use crate::provider::Provider;
 use crate::settings::Settings;
 use crate::store::{AppMode, AppState};
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
+
+async fn sync_runtime_provider(state: &AppState, provider: &Provider) -> Result<(), String> {
+    let gateway_config = {
+        let config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        config.api_gateway.clone()
+    };
+
+    if gateway_config.enabled {
+        api_gateway::start_or_update(state, provider, gateway_config.port).await?;
+        config::merge_claude_config(&api_gateway::build_gateway_provider_config(
+            provider,
+            gateway_config.port,
+        ))?;
+    } else {
+        config::merge_claude_config(&provider.settings_config)?;
+    }
+
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn get_providers(
@@ -56,55 +79,60 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
     // 验证供应商配置
     provider.validate()?;
 
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|e| format!("获取锁失败: {}", e))?;
+    let is_current = {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
 
-    if !config.providers.contains_key(&provider.id) {
-        return Err("供应商不存在".to_string());
-    }
+        if !config.providers.contains_key(&provider.id) {
+            return Err("供应商不存在".to_string());
+        }
 
-    // 如果更新的是当前供应商，同时更新Claude配置
-    let is_current = config.current == provider.id;
-
-    config
-        .providers
-        .insert(provider.id.clone(), provider.clone());
+        let is_current = config.current == provider.id;
+        config
+            .providers
+            .insert(provider.id.clone(), provider.clone());
+        is_current
+    };
 
     if is_current {
-        // 合并Claude配置文件（只覆盖provider中指定的键）
-        config::merge_claude_config(&provider.settings_config)?;
+        sync_runtime_provider(state.inner(), &provider).await?;
     }
 
-    drop(config);
     state.save()
 }
 
 #[tauri::command]
 pub async fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|e| format!("获取锁失败: {}", e))?;
+    let next_current_provider = {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
 
-    if !config.providers.contains_key(&id) {
-        return Err("供应商不存在".to_string());
+        if !config.providers.contains_key(&id) {
+            return Err("供应商不存在".to_string());
+        }
+
+        config.providers.remove(&id);
+
+        if config.current == id {
+            config.current = config
+                .providers
+                .keys()
+                .next()
+                .unwrap_or(&String::new())
+                .clone();
+        }
+
+        config.providers.get(&config.current).cloned()
+    };
+
+    if let Some(provider) = next_current_provider {
+        sync_runtime_provider(state.inner(), &provider).await?;
     }
 
-    config.providers.remove(&id);
-
-    // 如果删除的是当前供应商，切换到其他供应商
-    if config.current == id {
-        config.current = config
-            .providers
-            .keys()
-            .next()
-            .unwrap_or(&String::new())
-            .clone();
-    }
-
-    drop(config);
     state.save()
 }
 
@@ -114,24 +142,23 @@ pub async fn switch_provider(
     state: State<'_, AppState>,
     provider_id: String,
 ) -> Result<bool, String> {
-    let mut config = state
-        .config
-        .lock()
-        .map_err(|e| format!("获取锁失败: {}", e))?;
+    let provider = {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
 
-    let provider = config
-        .providers
-        .get(&provider_id)
-        .ok_or("供应商不存在")?
-        .clone();
+        let provider = config
+            .providers
+            .get(&provider_id)
+            .ok_or("供应商不存在")?
+            .clone();
 
-    // 合并Claude配置文件（只覆盖provider中指定的键）
-    config::merge_claude_config(&provider.settings_config)?;
+        config.current = provider_id.clone();
+        provider
+    };
 
-    // 更新当前供应商
-    config.current = provider_id.clone();
-
-    drop(config);
+    sync_runtime_provider(state.inner(), &provider).await?;
     state.save()?;
 
     // 更新托盘菜单
@@ -241,6 +268,73 @@ pub async fn get_claude_config() -> Result<serde_json::Value, String> {
             "path": path.to_string_lossy()
         }))
     }
+}
+
+#[tauri::command]
+pub async fn get_api_gateway_status(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let (gateway_config, provider) = {
+        let config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        let provider = config.providers.get(&config.current).cloned();
+        (config.api_gateway.clone(), provider)
+    };
+
+    let running = api_gateway::is_running(state.inner())?;
+    let target_base_url = provider
+        .as_ref()
+        .map(api_gateway::provider_target_base_url)
+        .transpose()?;
+
+    Ok(serde_json::json!({
+        "enabled": gateway_config.enabled,
+        "running": running,
+        "port": gateway_config.port,
+        "localBaseUrl": api_gateway::gateway_base_url(gateway_config.port),
+        "targetProviderId": provider.as_ref().map(|item| item.id.clone()),
+        "targetProviderName": provider.as_ref().map(|item| item.name.clone()),
+        "targetBaseUrl": target_base_url,
+    }))
+}
+
+#[tauri::command]
+pub async fn set_api_gateway_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    let (provider, port) = {
+        let config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        let provider = config.providers.get(&config.current).cloned();
+        let port = config.api_gateway.port;
+        (provider, port)
+    };
+
+    let provider = provider.ok_or("当前没有可用的供应商")?;
+
+    if enabled {
+        api_gateway::start_or_update(state.inner(), &provider, port).await?;
+        config::merge_claude_config(&api_gateway::build_gateway_provider_config(&provider, port))?;
+    } else {
+        api_gateway::stop(state.inner())?;
+        config::merge_claude_config(&provider.settings_config)?;
+    }
+
+    {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        config.api_gateway.enabled = enabled;
+    }
+
+    state.save()?;
+    get_api_gateway_status(state).await
 }
 
 #[tauri::command]

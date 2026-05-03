@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Provider, Settings, AppMode } from "../types";
+import { Provider, Settings, AppMode, ApiGatewayStatus } from "../types";
 
 export class TauriAPI {
   // 获取所有供应商
@@ -133,6 +133,16 @@ export class TauriAPI {
   // 使用指定 provider 启动 Claude Code
   async launchClaudeWithProvider(providerId: string): Promise<void> {
     return await invoke("launch_claude_with_provider", { providerId });
+  }
+
+  // 获取 API Gateway 状态
+  async getApiGatewayStatus(): Promise<ApiGatewayStatus> {
+    return await invoke("get_api_gateway_status");
+  }
+
+  // 启用或禁用 API Gateway
+  async setApiGatewayEnabled(enabled: boolean): Promise<ApiGatewayStatus> {
+    return await invoke("set_api_gateway_enabled", { enabled });
   }
 
   // 监听供应商切换事件

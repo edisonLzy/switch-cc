@@ -10,11 +10,28 @@ pub enum AppMode {
     MenuBar,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiGatewayConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for ApiGatewayConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 3456,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub providers: HashMap<String, Provider>,
     pub current: String,
     pub app_mode: AppMode,
+    #[serde(default)]
+    pub api_gateway: ApiGatewayConfig,
 }
 
 impl Default for AppConfig {
@@ -23,6 +40,7 @@ impl Default for AppConfig {
             providers: HashMap::new(),
             current: String::new(),
             app_mode: AppMode::Main,
+            api_gateway: ApiGatewayConfig::default(),
         }
     }
 }
@@ -51,6 +69,7 @@ impl AppConfig {
 
 pub struct AppState {
     pub config: Mutex<AppConfig>,
+    pub api_gateway_runtime: Mutex<crate::api_gateway::ApiGatewayRuntime>,
 }
 
 impl AppState {
@@ -58,6 +77,7 @@ impl AppState {
         let config = config::load_config().unwrap_or_default();
         Self {
             config: Mutex::new(config),
+            api_gateway_runtime: Mutex::new(crate::api_gateway::ApiGatewayRuntime::default()),
         }
     }
 

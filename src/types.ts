@@ -11,6 +11,16 @@ export interface AppConfig {
   current: string;
 }
 
+export interface ApiGatewayStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  localBaseUrl: string;
+  targetProviderId?: string;
+  targetProviderName?: string;
+  targetBaseUrl?: string;
+}
+
 // 应用设置类型
 export interface Settings {
   // 是否在系统托盘（macOS 菜单栏）显示图标
