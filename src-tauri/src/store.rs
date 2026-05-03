@@ -2,7 +2,7 @@ use crate::config;
 use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMode {
@@ -10,11 +10,28 @@ pub enum AppMode {
     MenuBar,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiGatewayConfig {
+    pub enabled: bool,
+    pub port: u16,
+}
+
+impl Default for ApiGatewayConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 3456,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub providers: HashMap<String, Provider>,
     pub current: String,
     pub app_mode: AppMode,
+    #[serde(default)]
+    pub api_gateway: ApiGatewayConfig,
 }
 
 impl Default for AppConfig {
@@ -23,6 +40,7 @@ impl Default for AppConfig {
             providers: HashMap::new(),
             current: String::new(),
             app_mode: AppMode::Main,
+            api_gateway: ApiGatewayConfig::default(),
         }
     }
 }
@@ -51,6 +69,8 @@ impl AppConfig {
 
 pub struct AppState {
     pub config: Mutex<AppConfig>,
+    pub api_gateway_runtime: Mutex<crate::api_gateway::ApiGatewayRuntime>,
+    app_handle: OnceLock<tauri::AppHandle>,
 }
 
 impl AppState {
@@ -58,7 +78,19 @@ impl AppState {
         let config = config::load_config().unwrap_or_default();
         Self {
             config: Mutex::new(config),
+            api_gateway_runtime: Mutex::new(crate::api_gateway::ApiGatewayRuntime::default()),
+            app_handle: OnceLock::new(),
         }
+    }
+
+    pub fn set_app_handle(&self, app_handle: tauri::AppHandle) {
+        let _ = self.app_handle.set(app_handle);
+    }
+
+    pub fn app_handle(&self) -> Result<&tauri::AppHandle, String> {
+        self.app_handle
+            .get()
+            .ok_or_else(|| "应用句柄尚未初始化".to_string())
     }
 
     pub fn save(&self) -> Result<(), String> {

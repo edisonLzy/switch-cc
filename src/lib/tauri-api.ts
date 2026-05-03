@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Provider, Settings, AppMode } from "../types";
+import {
+  Provider,
+  Settings,
+  AppMode,
+  ApiGatewayStatus,
+  ApiGatewayLogEntry,
+} from "../types";
 
 export class TauriAPI {
   // 获取所有供应商
@@ -135,6 +141,16 @@ export class TauriAPI {
     return await invoke("launch_claude_with_provider", { providerId });
   }
 
+  // 获取 API Gateway 状态
+  async getApiGatewayStatus(): Promise<ApiGatewayStatus> {
+    return await invoke("get_api_gateway_status");
+  }
+
+  // 启用或禁用 API Gateway
+  async setApiGatewayEnabled(enabled: boolean): Promise<ApiGatewayStatus> {
+    return await invoke("set_api_gateway_enabled", { enabled });
+  }
+
   // 监听供应商切换事件
   async onProviderSwitched(callback: (data: { providerId: string }) => void) {
     return await listen("provider-switched", (event) => {
@@ -146,6 +162,12 @@ export class TauriAPI {
   async onAppModeChanged(callback: (data: { mode: AppMode }) => void) {
     return await listen("app-mode-changed", (event) => {
       callback(event.payload as { mode: AppMode });
+    });
+  }
+
+  async onApiGatewayLog(callback: (entry: ApiGatewayLogEntry) => void) {
+    return await listen("api-gateway-log", (event) => {
+      callback(event.payload as ApiGatewayLogEntry);
     });
   }
 }

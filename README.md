@@ -87,6 +87,88 @@
 - 🔄 **自动更新** - 内置更新检查功能（Tauri Updater）
 - ☁️ **云端同步** - 多设备配置同步，支持智能合并
 
+### 🌐 API Gateway 本地代理
+
+API Gateway 是 Switch CC 提供的一个本地 HTTP 代理服务,支持在运行时动态切换供应商而无需修改配置文件。
+
+#### 🌟 功能特点
+
+- **本地代理** - 在本机启动 HTTP 代理服务器，默认端口 3456
+- **运行时切换** - 切换供应商时只更新代理目标，无需修改 `~/.claude/settings.json`
+- **请求日志** - 实时查看所有代理请求的详情，包括请求路径、状态码、响应时间
+- **多种认证方式** - 支持 Header 和 Query 参数两种认证策略
+- **自动恢复** - 应用重启时自动恢复上次状态（如已启用则自动启动）
+
+#### 🔧 使用方法
+
+##### 1. 启用 API Gateway
+
+在主窗口顶部找到 API Gateway 开关，点击复选框即可启用。
+
+启用后:
+- 状态区域显示本地代理地址（如 `http://127.0.0.1:3456`）
+- 显示当前代理的目标供应商名称
+
+##### 2. 配置 Claude Code 使用本地代理
+
+修改供应商配置，将 `ANTHROPIC_BASE_URL` 指向本地代理地址：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_API_KEY": "your-api-key",
+    "ANTHROPIC_BASE_URL": "http://127.0.0.1:3456"
+  }
+}
+```
+
+##### 3. 查看请求日志
+
+点击 API Gateway 卡片区域打开日志面板，可查看：
+- 请求时间戳
+- 请求方法和路径
+- 响应状态码
+- 响应耗时
+- 目标供应商
+
+##### 4. 禁用 API Gateway
+
+关闭复选框后，代理服务器停止运行，Claude Code 配置恢复直连供应商。
+
+#### ⚙️ 认证配置
+
+API Gateway 支持通过 `apiGateway.auth` 配置自定义认证策略：
+
+```json
+{
+  "apiGateway": {
+    "auth": [
+      {"type": "header", "name": "Authorization", "value": "Bearer your-token"},
+      {"type": "query", "name": "access_token", "envVar": "ACCESS_TOKEN"}
+    ]
+  }
+}
+```
+
+**配置说明：**
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `type` | 认证类型，可选 `header` 或 `query` | `"header"` |
+| `name` | Header 名称或 Query 参数名 | `"Authorization"` |
+| `value` | 固定的认证值 | `"Bearer sk-xxx"` |
+| `envVar` | 从环境变量读取值（优先级高于 value） | `"ANTHROPIC_API_KEY"` |
+
+**向后兼容：**
+
+仍支持旧的 `apiGateway.authHeaders` 配置方式，但建议迁移到新的 `auth` 数组格式。
+
+#### 📝 适用场景
+
+1. **快速切换测试** - 不修改 Claude 配置的情况下测试不同供应商
+2. **调试请求** - 查看 Claude Code 发出的实际请求
+3. **绕过网络限制** - 某些供应商需要通过特定方式认证
+
 ---
 
 ## ☁️ 云端同步功能
@@ -379,7 +461,8 @@ switch-cc/
 │   │   │   ├── MainWindow.tsx    # 主界面容器
 │   │   │   ├── ProviderList.tsx  # 供应商列表
 │   │   │   ├── AddProviderModal.tsx  # 添加供应商弹窗
-│   │   │   └── EditProviderModal.tsx # 编辑供应商弹窗
+│   │   │   ├── EditProviderModal.tsx # 编辑供应商弹窗
+│   │   │   └── ApiGatewayLogModal.tsx # API Gateway 日志面板
 │   │   ├── MenuBar/              # MenuBar 组件
 │   │   │   └── MenuBarWindow.tsx # MenuBar 窗口
 │   │   └── ui/                   # UI 组件库
@@ -408,7 +491,8 @@ switch-cc/
 │   │   ├── provider.rs           # 供应商数据结构
 │   │   ├── settings.rs           # 应用设置
 │   │   ├── store.rs              # 应用状态管理
-│   │   └── menubar.rs            # MenuBar 窗口管理
+│   │   ├── menubar.rs            # MenuBar 窗口管理
+│   │   └── api_gateway.rs        # API Gateway 本地代理服务器
 │   ├── capabilities/             # Tauri 权限配置
 │   │   └── default.json          # 默认权限
 │   ├── icons/                    # 应用图标

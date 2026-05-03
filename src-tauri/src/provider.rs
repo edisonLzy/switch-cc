@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
@@ -51,18 +50,63 @@ impl Provider {
             return Err("env 必须是一个对象".to_string());
         }
 
-        // 检查认证配置 (支持 ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY)
-        if env.get("ANTHROPIC_AUTH_TOKEN").is_none() && env.get("ANTHROPIC_API_KEY").is_none() {
-            return Err("缺少认证配置 (ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY)".to_string());
+        // 检查认证配置: 兼容旧版 ANTHROPIC_* 字段和新的 apiGateway 认证策略
+        if !self.has_legacy_auth(env) && !self.has_gateway_auth_config() {
+            return Err("缺少认证配置 (ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY / apiGateway.auth)".to_string());
         }
 
         Ok(())
+    }
+
+    fn has_legacy_auth(&self, env: &serde_json::Value) -> bool {
+        env.get("ANTHROPIC_AUTH_TOKEN").is_some() || env.get("ANTHROPIC_API_KEY").is_some()
+    }
+
+    fn has_gateway_auth_config(&self) -> bool {
+        let Some(api_gateway) = self.settings_config.get("apiGateway") else {
+            return false;
+        };
+
+        let has_auth = api_gateway
+            .get("auth")
+            .and_then(|value| value.as_array())
+            .map(|entries| {
+                entries.iter().any(|entry| {
+                    let name = entry.get("name").and_then(|item| item.as_str()).map(str::trim);
+                    let value = entry.get("value").and_then(|item| item.as_str()).map(str::trim);
+                    let env_var = entry.get("envVar").and_then(|item| item.as_str()).map(str::trim);
+
+                    name.is_some_and(|value| !value.is_empty())
+                        && (value.is_some_and(|value| !value.is_empty())
+                            || env_var.is_some_and(|value| !value.is_empty()))
+                })
+            })
+            .unwrap_or(false);
+
+        let has_auth_headers = api_gateway
+            .get("authHeaders")
+            .and_then(|value| value.as_array())
+            .map(|entries| {
+                entries.iter().any(|entry| {
+                    let name = entry.get("name").and_then(|item| item.as_str()).map(str::trim);
+                    let value = entry.get("value").and_then(|item| item.as_str()).map(str::trim);
+                    let env_var = entry.get("envVar").and_then(|item| item.as_str()).map(str::trim);
+
+                    name.is_some_and(|value| !value.is_empty())
+                        && (value.is_some_and(|value| !value.is_empty())
+                            || env_var.is_some_and(|value| !value.is_empty()))
+                })
+            })
+            .unwrap_or(false);
+
+        has_auth || has_auth_headers
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_validate_with_auth_token_only() {
@@ -138,8 +182,31 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err(),
-            "缺少认证配置 (ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY)"
+            "缺少认证配置 (ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY / apiGateway.auth)"
         );
+    }
+
+    #[test]
+    fn test_validate_with_api_gateway_auth_strategy() {
+        let provider = Provider {
+            id: "test-9".to_string(),
+            name: "Gateway Strategy Provider".to_string(),
+            settings_config: json!({
+                "env": {
+                    "ACCESS_TOKEN": "gateway-token"
+                },
+                "apiGateway": {
+                    "auth": [
+                        {"type": "query", "name": "access_token", "envVar": "ACCESS_TOKEN"}
+                    ]
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        assert!(provider.validate().is_ok());
     }
 
     #[test]
