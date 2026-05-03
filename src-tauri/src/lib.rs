@@ -202,6 +202,7 @@ pub fn run() {
 
             // 初始化应用状态
             let app_state = AppState::new();
+            app_state.set_app_handle(app.handle().clone());
 
             // 初始化配置文件
             {
@@ -218,7 +219,7 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(app_state) = app_handle.try_state::<AppState>() {
-                        let (gateway_config, provider) = {
+                        let (gateway_config, provider, providers) = {
                             let config = match app_state.config.lock() {
                                 Ok(config) => config,
                                 Err(error) => {
@@ -227,7 +228,8 @@ pub fn run() {
                                 }
                             };
                             let provider = config.providers.get(&config.current).cloned();
-                            (config.api_gateway.clone(), provider)
+                            let providers = config.providers.values().cloned().collect::<Vec<_>>();
+                            (config.api_gateway.clone(), provider, providers)
                         };
 
                         if gateway_config.enabled {
@@ -243,6 +245,7 @@ pub fn run() {
                                 } else if let Err(error) = config::merge_claude_config(
                                     &api_gateway::build_gateway_provider_config(
                                         &provider,
+                                        &providers,
                                         gateway_config.port,
                                     ),
                                 ) {

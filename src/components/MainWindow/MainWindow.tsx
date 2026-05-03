@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ApiGatewayStatus, Provider } from "../../types";
+import { ApiGatewayLogEntry, ApiGatewayStatus, Provider } from "../../types";
 import ProviderList from "./ProviderList";
 import AddProviderModal from "./AddProviderModal";
 import EditProviderModal from "./EditProviderModal";
@@ -7,6 +7,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import SettingsModal from "./SettingsModal";
 import ClaudeConfigModal from "./ClaudeConfigModal";
 import ConfigSyncModal from "./ConfigSyncModal";
+import ApiGatewayLogModal from "./ApiGatewayLogModal";
 import { UpdateBadge } from "./UpdateBadge";
 import { Plus, Settings, Moon, Sun, Eye, Cloud, Waypoints } from "lucide-react";
 import { Button } from "../ui/button";
@@ -37,7 +38,9 @@ function MainWindow() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
+  const [isApiGatewayLogOpen, setIsApiGatewayLogOpen] = useState(false);
   const [apiGatewayStatus, setApiGatewayStatus] = useState<ApiGatewayStatus | null>(null);
+  const [apiGatewayLogs, setApiGatewayLogs] = useState<ApiGatewayLogEntry[]>([]);
   const [isApiGatewayPending, setIsApiGatewayPending] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -70,6 +73,31 @@ function MainWindow() {
   // 加载供应商列表
   useEffect(() => {
     loadProviders();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setupLogListener = async () => {
+      try {
+        unlisten = await api.onApiGatewayLog((entry) => {
+          setApiGatewayLogs((currentLogs) => {
+            const nextLogs = [...currentLogs, entry];
+            return nextLogs.slice(-100);
+          });
+        });
+      } catch (error) {
+        console.error("设置 API Gateway 日志监听失败:", error);
+      }
+    };
+
+    setupLogListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
   }, []);
 
   // 清理定时器
@@ -336,7 +364,19 @@ function MainWindow() {
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-3 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow">
+            <div
+              className="flex cursor-pointer items-center gap-3 rounded-base border-2 border-border bg-secondary-background px-3 py-2 shadow-shadow transition-transform hover:-translate-x-1 hover:-translate-y-1"
+              onClick={() => setIsApiGatewayLogOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setIsApiGatewayLogOpen(true);
+                }
+              }}
+              aria-label="查看 API Gateway 日志"
+            >
               <div className="flex items-center gap-2">
                 <Waypoints size={16} />
                 <span className="text-sm font-medium">API Gateway</span>
@@ -344,9 +384,8 @@ function MainWindow() {
               <Checkbox
                 checked={apiGatewayStatus?.enabled ?? false}
                 disabled={isApiGatewayPending || Object.keys(providers).length === 0}
-                onCheckedChange={(checked) =>
-                  handleToggleApiGateway(checked === true)
-                }
+                onClick={(event) => event.stopPropagation()}
+                onCheckedChange={(checked) => handleToggleApiGateway(checked === true)}
                 aria-label="启用 API Gateway"
               />
               <div className="min-w-0 text-xs leading-5 text-foreground opacity-80">
@@ -355,11 +394,7 @@ function MainWindow() {
                     ? `本地: ${apiGatewayStatus.localBaseUrl}`
                     : "关闭后直连当前供应商"}
                 </div>
-                {apiGatewayStatus?.enabled && apiGatewayStatus.targetProviderName && (
-                  <div className="truncate">
-                    目标: {apiGatewayStatus.targetProviderName}
-                  </div>
-                )}
+                <div className="truncate">点击查看实时日志</div>
               </div>
             </div>
             <Button
@@ -435,6 +470,15 @@ function MainWindow() {
         <ClaudeConfigModal
           isOpen={isClaudeConfigOpen}
           onClose={() => setIsClaudeConfigOpen(false)}
+        />
+      )}
+
+      {isApiGatewayLogOpen && (
+        <ApiGatewayLogModal
+          isOpen={isApiGatewayLogOpen}
+          onClose={() => setIsApiGatewayLogOpen(false)}
+          localBaseUrl={apiGatewayStatus?.localBaseUrl}
+          logs={apiGatewayLogs}
         />
       )}
 

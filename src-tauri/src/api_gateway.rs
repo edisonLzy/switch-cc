@@ -16,10 +16,12 @@ use futures_util::TryStreamExt;
 use reqwest::Url;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tauri::Emitter;
 use tokio::sync::{oneshot, RwLock};
 
 #[derive(Clone)]
 struct GatewayServerState {
+    app_handle: tauri::AppHandle,
     client: reqwest::Client,
     route_state: Arc<RwLock<RouteState>>,
 }
@@ -30,14 +32,14 @@ struct RouteState {
     provider_name: String,
     target_base_url: String,
     upstream_auth: UpstreamAuth,
+    available_models: Vec<GatewayModel>,
     models: Vec<GatewayModel>,
-    model_aliases: std::collections::HashMap<String, String>,
+    model_routes: std::collections::HashMap<String, GatewayModelRoute>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct UpstreamAuth {
-    api_key: Option<String>,
-    auth_token: Option<String>,
+    headers: Vec<GatewayAuthHeader>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,11 +49,35 @@ struct GatewayModel {
     display_name: String,
 }
 
+#[derive(Debug, Clone)]
+struct GatewayModelRoute {
+    provider_id: String,
+    provider_name: String,
+    target_base_url: String,
+    upstream_model: String,
+    upstream_auth: UpstreamAuth,
+}
+
+#[derive(Debug, Clone)]
+struct GatewayAuthHeader {
+    name: String,
+    value: String,
+}
+
 #[derive(Default)]
 pub struct ApiGatewayRuntime {
     server_handle: Option<tauri::async_runtime::JoinHandle<()>>,
     shutdown_tx: Option<oneshot::Sender<()>>,
     route_state: Option<Arc<RwLock<RouteState>>>,
+}
+
+#[derive(Debug, Clone)]
+struct ProviderRouteConfig {
+    provider_id: String,
+    provider_name: String,
+    target_base_url: String,
+    upstream_auth: UpstreamAuth,
+    models: Vec<GatewayModel>,
 }
 
 pub fn gateway_base_url(port: u16) -> String {
@@ -131,36 +157,137 @@ fn configured_provider_models(provider: &Provider) -> Vec<GatewayModel> {
     models
 }
 
-fn build_model_aliases(models: &[GatewayModel]) -> std::collections::HashMap<String, String> {
-    models
-        .iter()
-        .map(|model| (model.id.clone(), model.upstream_model.clone()))
-        .collect()
+fn read_env_value(provider: &Provider, key: &str) -> Option<String> {
+    provider
+        .settings_config
+        .get("env")
+        .and_then(|value| value.as_object())
+        .and_then(|values| values.get(key))
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn configured_upstream_auth(provider: &Provider) -> UpstreamAuth {
-    let env = provider
-        .settings_config
-        .get("env")
-        .and_then(|value| value.as_object());
-
-    let read = |key: &str| {
-        env.and_then(|values| values.get(key))
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    };
-
-    UpstreamAuth {
-        api_key: read("ANTHROPIC_API_KEY"),
-        auth_token: read("ANTHROPIC_AUTH_TOKEN"),
+    let mut headers = configured_custom_auth_headers(provider);
+    if !headers.is_empty() {
+        return UpstreamAuth { headers };
     }
+
+    let target_base_url = provider_target_base_url(provider).unwrap_or_default();
+    let is_official_anthropic = target_base_url.contains("api.anthropic.com");
+    let is_minimax = target_base_url.contains("api.minimaxi.com");
+
+    if let Some(api_key) = read_env_value(provider, "ANTHROPIC_API_KEY") {
+        headers.push(GatewayAuthHeader {
+            name: AUTHORIZATION.as_str().to_string(),
+            value: format!("Bearer {api_key}"),
+        });
+        if !is_minimax {
+            headers.push(GatewayAuthHeader {
+                name: "x-api-key".to_string(),
+                value: api_key,
+            });
+        }
+    } else if let Some(auth_token) = read_env_value(provider, "ANTHROPIC_AUTH_TOKEN") {
+        headers.push(GatewayAuthHeader {
+            name: AUTHORIZATION.as_str().to_string(),
+            value: format!("Bearer {auth_token}"),
+        });
+        if !is_official_anthropic && !is_minimax {
+            headers.push(GatewayAuthHeader {
+                name: "x-api-key".to_string(),
+                value: auth_token,
+            });
+        }
+    }
+
+    UpstreamAuth { headers }
+}
+
+fn configured_custom_auth_headers(provider: &Provider) -> Vec<GatewayAuthHeader> {
+    provider
+        .settings_config
+        .get("apiGateway")
+        .and_then(|value| value.get("authHeaders"))
+        .and_then(|value| value.as_array())
+        .map(|headers| {
+            headers
+                .iter()
+                .filter_map(|entry| {
+                    let name = entry.get("name")?.as_str()?.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+
+                    let value = entry.get("value").and_then(|item| item.as_str()).map(str::to_string);
+                    let env_var = entry.get("envVar").and_then(|item| item.as_str()).map(str::trim);
+
+                    let resolved = match (value, env_var) {
+                        (Some(value), _) if !value.trim().is_empty() => Some(value),
+                        (_, Some(env_var)) if !env_var.is_empty() => read_env_value(provider, env_var),
+                        _ => None,
+                    }?;
+
+                    Some(GatewayAuthHeader {
+                        name: name.to_string(),
+                        value: resolved,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn build_provider_route_config(provider: &Provider) -> Result<ProviderRouteConfig, String> {
+    Ok(ProviderRouteConfig {
+        provider_id: provider.id.clone(),
+        provider_name: provider.name.clone(),
+        target_base_url: provider_target_base_url(provider)?,
+        upstream_auth: configured_upstream_auth(provider),
+        models: configured_provider_models(provider),
+    })
+}
+
+fn build_model_routes(
+    providers: &[ProviderRouteConfig],
+) -> std::collections::HashMap<String, GatewayModelRoute> {
+    providers
+        .iter()
+        .flat_map(|provider| {
+            provider.models.iter().map(|model| {
+                (
+                    model.id.clone(),
+                    GatewayModelRoute {
+                        provider_id: provider.provider_id.clone(),
+                        provider_name: provider.provider_name.clone(),
+                        target_base_url: provider.target_base_url.clone(),
+                        upstream_model: model.upstream_model.clone(),
+                        upstream_auth: provider.upstream_auth.clone(),
+                    },
+                )
+            })
+        })
+        .collect()
+}
+
+fn collect_route_configs(state: &AppState) -> Result<Vec<ProviderRouteConfig>, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
+
+    config
+        .providers
+        .values()
+        .map(build_provider_route_config)
+        .collect()
 }
 
 fn build_models_response(state: &RouteState) -> Value {
     json!({
-        "data": state.models.iter().map(|model| {
+        "data": state.available_models.iter().map(|model| {
             json!({
                 "id": model.id,
                 "type": "model",
@@ -171,7 +298,7 @@ fn build_models_response(state: &RouteState) -> Value {
     })
 }
 
-fn rewrite_model_aliases(body: Bytes, aliases: &std::collections::HashMap<String, String>) -> Bytes {
+fn rewrite_model_aliases(body: Bytes, model_routes: &std::collections::HashMap<String, GatewayModelRoute>) -> Bytes {
     let Ok(mut json_body) = serde_json::from_slice::<Value>(&body) else {
         return body;
     };
@@ -184,11 +311,11 @@ fn rewrite_model_aliases(body: Bytes, aliases: &std::collections::HashMap<String
         return body;
     };
 
-    let Some(upstream_model) = aliases.get(model_id) else {
+    let Some(route) = model_routes.get(model_id) else {
         return body;
     };
 
-    *model = Value::String(upstream_model.clone());
+    *model = Value::String(route.upstream_model.clone());
 
     serde_json::to_vec(&json_body)
         .map(Bytes::from)
@@ -201,11 +328,16 @@ fn extract_request_model(body: &Bytes) -> Option<String> {
         .and_then(|json_body| json_body.get("model").and_then(|value| value.as_str()).map(str::to_string))
 }
 
-pub fn build_gateway_provider_config(provider: &Provider, port: u16) -> serde_json::Value {
+pub fn build_gateway_provider_config(provider: &Provider, all_providers: &[Provider], port: u16) -> serde_json::Value {
     let mut provider_config = provider.settings_config.clone();
-    let models = configured_provider_models(provider);
+    let models = all_providers
+        .iter()
+        .flat_map(configured_provider_models)
+        .collect::<Vec<_>>();
     let default_model_id = models
-        .first()
+        .iter()
+        .find(|model| model.id.starts_with(&format!("switch-cc/{}:", provider.id)))
+        .or_else(|| models.first())
         .map(|model| model.id.clone())
         .unwrap_or_else(|| format!("switch-cc/{}:default", provider.id));
 
@@ -260,11 +392,32 @@ pub fn is_running(state: &AppState) -> Result<bool, String> {
     Ok(runtime.server_handle.is_some())
 }
 
+fn emit_log(app_handle: &tauri::AppHandle, level: &str, message: impl Into<String>) {
+    let message = message.into();
+    let payload = json!({
+        "timestamp": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        "level": level,
+        "message": message,
+    });
+
+    let _ = app_handle.emit("api-gateway-log", payload);
+}
+
 pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -> Result<(), String> {
-    let target_base_url = provider_target_base_url(provider)?;
-    let upstream_auth = configured_upstream_auth(provider);
-    let models = configured_provider_models(provider);
-    let model_aliases = build_model_aliases(&models);
+    let route_configs = collect_route_configs(state)?;
+    let current_route = route_configs
+        .iter()
+        .find(|item| item.provider_id == provider.id)
+        .cloned()
+        .ok_or_else(|| format!("未找到供应商 {} 的 Gateway 路由配置", provider.id))?;
+    let available_models = route_configs
+        .iter()
+        .flat_map(|item| item.models.clone())
+        .collect::<Vec<_>>();
+    let model_routes = build_model_routes(&route_configs);
+    let target_base_url = current_route.target_base_url.clone();
+    let upstream_auth = current_route.upstream_auth.clone();
+    let models = current_route.models.clone();
 
     let (route_state, should_spawn) = {
         let mut runtime = state
@@ -278,8 +431,9 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
                 provider_name: provider.name.clone(),
                 target_base_url: target_base_url.clone(),
                 upstream_auth: upstream_auth.clone(),
+                available_models: available_models.clone(),
                 models: models.clone(),
-                model_aliases: model_aliases.clone(),
+                model_routes: model_routes.clone(),
             }));
             runtime.route_state = Some(route_state.clone());
             route_state
@@ -287,10 +441,12 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
 
         let should_spawn = runtime.server_handle.is_none();
         if should_spawn {
+            let app_handle = state.app_handle()?.clone();
             let client = reqwest::Client::builder()
                 .build()
                 .map_err(|e| format!("初始化 API Gateway HTTP 客户端失败: {}", e))?;
             let server_state = GatewayServerState {
+                app_handle,
                 client,
                 route_state: route_state.clone(),
             };
@@ -309,19 +465,24 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
         route.provider_name = provider.name.clone();
         route.target_base_url = target_base_url.clone();
         route.upstream_auth = upstream_auth;
+        route.available_models = available_models;
         route.models = models;
-        route.model_aliases = model_aliases;
+        route.model_routes = model_routes;
     }
 
     if should_spawn {
-        log::info!(
-            "API Gateway 已启动，监听 {}，目标供应商 {} -> {}",
+        let message = format!(
+            "API Gateway 已启动，监听 {}，当前上游 {} -> {}",
             gateway_base_url(port),
             provider.name,
             target_base_url
         );
+        log::info!("{}", message);
+        emit_log(state.app_handle()?, "info", message);
     } else {
-        log::info!("API Gateway 路由已更新: {} -> {}", provider.name, target_base_url);
+        let message = format!("API Gateway 路由已更新: {} -> {}", provider.name, target_base_url);
+        log::info!("{}", message);
+        emit_log(state.app_handle()?, "info", message);
     }
 
     Ok(())
@@ -342,6 +503,7 @@ pub fn stop(state: &AppState) -> Result<(), String> {
     }
 
     log::info!("API Gateway 已停止");
+    emit_log(state.app_handle()?, "info", "API Gateway 已停止");
     Ok(())
 }
 
@@ -401,33 +563,41 @@ async fn proxy_request(
 
     if method == Method::GET && uri.path() == "/v1/models" {
         let route = state.route_state.read().await;
-        log::info!(
-            "API Gateway 命中模型列表: provider={} path={}",
+        let message = format!(
+            "API Gateway 命中模型列表: current_provider={} path={} count={}",
             route.provider_name,
-            request_path
+            request_path,
+            route.available_models.len()
         );
+        log::info!("{}", message);
+        emit_log(&state.app_handle, "info", message);
         return Json(build_models_response(&route)).into_response();
     }
 
     if let Some(model) = request_model.as_deref() {
-        log::info!(
+        let message = format!(
             "API Gateway 收到请求: method={} path={} model={}",
             method,
             request_path,
             model
         );
+        log::info!("{}", message);
+        emit_log(&state.app_handle, "info", message);
     } else {
-        log::info!(
+        let message = format!(
             "API Gateway 收到请求: method={} path={}",
             method,
             request_path
         );
+        log::info!("{}", message);
+        emit_log(&state.app_handle, "info", message);
     }
 
-    match forward_request(state, method, uri, headers, body).await {
+    match forward_request(state.clone(), method, uri, headers, body).await {
         Ok(response) => response,
         Err(error) => {
             log::error!("API Gateway 转发失败: {}", error);
+            emit_log(&state.app_handle, "error", format!("API Gateway 转发失败: {}", error));
             (
                 StatusCode::BAD_GATEWAY,
                 serde_json::json!({
@@ -448,14 +618,25 @@ async fn forward_request(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, String> {
-    let (target_base_url, model_aliases, upstream_auth) = {
+    let (default_target_base_url, default_upstream_auth, model_routes) = {
         let route = state.route_state.read().await;
         (
             route.target_base_url.clone(),
-            route.model_aliases.clone(),
             route.upstream_auth.clone(),
+            route.model_routes.clone(),
         )
     };
+
+    let selected_route = extract_request_model(&body)
+        .as_deref()
+        .and_then(|model| model_routes.get(model));
+
+    let target_base_url = selected_route
+        .map(|route| route.target_base_url.clone())
+        .unwrap_or(default_target_base_url);
+    let upstream_auth = selected_route
+        .map(|route| route.upstream_auth.clone())
+        .unwrap_or(default_upstream_auth);
 
     let target_url = build_target_url(&target_base_url, &uri)?;
     let reqwest_method = reqwest::Method::from_bytes(method.as_str().as_bytes())
@@ -469,30 +650,45 @@ async fn forward_request(
         request_builder = request_builder.header(name, value);
     }
 
-    request_builder = apply_upstream_auth_headers(request_builder, &target_base_url, &upstream_auth);
+    request_builder = apply_upstream_auth_headers(request_builder, &upstream_auth);
 
     let original_model = extract_request_model(&body);
     let rewritten_body = if method == Method::POST && uri.path() == "/v1/messages" {
-        rewrite_model_aliases(body, &model_aliases)
+        rewrite_model_aliases(body, &model_routes)
     } else {
         body
     };
     let rewritten_model = extract_request_model(&rewritten_body);
 
     if original_model != rewritten_model {
-        log::info!(
+        let message = format!(
             "API Gateway 模型重写: {} -> {}",
             original_model.as_deref().unwrap_or("<none>"),
             rewritten_model.as_deref().unwrap_or("<none>")
         );
+        log::info!("{}", message);
+        emit_log(&state.app_handle, "info", message);
     }
 
-    log::info!(
+    if let Some(route) = selected_route {
+        let message = format!(
+            "API Gateway 选中上游供应商: model={} provider={}({})",
+            original_model.as_deref().unwrap_or("<none>"),
+            route.provider_name,
+            route.provider_id
+        );
+        log::info!("{}", message);
+        emit_log(&state.app_handle, "info", message);
+    }
+
+    let forward_message = format!(
         "API Gateway 转发上游: method={} url={} model={}",
         method,
         target_url,
         rewritten_model.as_deref().or(original_model.as_deref()).unwrap_or("<none>")
     );
+    log::info!("{}", forward_message);
+    emit_log(&state.app_handle, "info", forward_message);
 
     let upstream_response = request_builder
         .body(rewritten_body)
@@ -501,7 +697,9 @@ async fn forward_request(
         .map_err(|e| format!("请求上游失败: {}", e))?;
 
     let status = upstream_response.status();
-    log::info!("API Gateway 上游响应: status={} url={}", status, target_url);
+    let response_message = format!("API Gateway 上游响应: status={} url={}", status, target_url);
+    log::info!("{}", response_message);
+    emit_log(&state.app_handle, "info", response_message);
     let response_headers = upstream_response.headers().clone();
     let body_stream = upstream_response
         .bytes_stream()
@@ -519,26 +717,10 @@ async fn forward_request(
 
 fn apply_upstream_auth_headers(
     mut request_builder: reqwest::RequestBuilder,
-    target_base_url: &str,
     upstream_auth: &UpstreamAuth,
 ) -> reqwest::RequestBuilder {
-    let is_official_anthropic = target_base_url.contains("api.anthropic.com");
-    let is_minimax = target_base_url.contains("api.minimaxi.com");
-
-    if let Some(api_key) = upstream_auth.api_key.as_deref() {
-        request_builder = request_builder.header(AUTHORIZATION, format!("Bearer {}", api_key));
-        if !is_minimax {
-            request_builder = request_builder.header("x-api-key", api_key);
-        }
-        return request_builder;
-    }
-
-    if let Some(auth_token) = upstream_auth.auth_token.as_deref() {
-        request_builder = request_builder.header(AUTHORIZATION, format!("Bearer {}", auth_token));
-
-        if !is_official_anthropic && !is_minimax {
-            request_builder = request_builder.header("x-api-key", auth_token);
-        }
+    for header in &upstream_auth.headers {
+        request_builder = request_builder.header(&header.name, &header.value);
     }
 
     request_builder
@@ -603,7 +785,7 @@ mod tests {
     #[test]
     fn gateway_config_rewrites_base_url_and_default_models() {
         let provider = test_provider();
-        let config = build_gateway_provider_config(&provider, 8787);
+        let config = build_gateway_provider_config(&provider, std::slice::from_ref(&provider), 8787);
         let env = config.get("env").and_then(|value| value.as_object()).unwrap();
 
         assert_eq!(
@@ -638,7 +820,13 @@ mod tests {
         );
         let aliases = std::collections::HashMap::from([(
             "switch-cc/minimax:default".to_string(),
-            "MiniMax-M2.7".to_string(),
+            GatewayModelRoute {
+                provider_id: "minimax".to_string(),
+                provider_name: "MiniMax".to_string(),
+                target_base_url: "https://api.minimaxi.com/anthropic".to_string(),
+                upstream_model: "MiniMax-M2.7".to_string(),
+                upstream_auth: UpstreamAuth::default(),
+            },
         )]);
 
         let rewritten = rewrite_model_aliases(body, &aliases);
@@ -674,8 +862,9 @@ mod tests {
         let provider = test_provider();
         let auth = configured_upstream_auth(&provider);
 
-        assert_eq!(auth.api_key, None);
-        assert_eq!(auth.auth_token.as_deref(), Some("sk-test"));
+        assert_eq!(auth.headers.len(), 1);
+        assert_eq!(auth.headers[0].name, "authorization");
+        assert_eq!(auth.headers[0].value, "Bearer sk-test");
     }
 
     #[test]
@@ -683,10 +872,11 @@ mod tests {
         let client = reqwest::Client::new();
         let request = apply_upstream_auth_headers(
             client.get("https://example.com"),
-            "https://api.minimaxi.com/anthropic",
             &UpstreamAuth {
-                api_key: None,
-                auth_token: Some("sk-test".to_string()),
+                headers: vec![GatewayAuthHeader {
+                    name: AUTHORIZATION.as_str().to_string(),
+                    value: "Bearer sk-test".to_string(),
+                }],
             },
         )
         .build()
@@ -703,5 +893,32 @@ mod tests {
     fn should_skip_request_header_filters_auth_headers_for_reinjection() {
         assert!(should_skip_request_header(&AUTHORIZATION));
         assert!(should_skip_request_header(&axum::http::header::HeaderName::from_static("x-api-key")));
+    }
+
+    #[test]
+    fn custom_auth_headers_can_reference_env_vars() {
+        let provider = Provider {
+            id: "custom-auth".to_string(),
+            name: "Custom Auth".to_string(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://example.com/anthropic",
+                    "CUSTOM_TOKEN": "abc123"
+                },
+                "apiGateway": {
+                    "authHeaders": [
+                        {"name": "x-custom-token", "envVar": "CUSTOM_TOKEN"}
+                    ]
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        let auth = configured_upstream_auth(&provider);
+        assert_eq!(auth.headers.len(), 1);
+        assert_eq!(auth.headers[0].name, "x-custom-token");
+        assert_eq!(auth.headers[0].value, "abc123");
     }
 }

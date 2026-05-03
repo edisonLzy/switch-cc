@@ -2,7 +2,7 @@ use crate::config;
 use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AppMode {
@@ -70,6 +70,7 @@ impl AppConfig {
 pub struct AppState {
     pub config: Mutex<AppConfig>,
     pub api_gateway_runtime: Mutex<crate::api_gateway::ApiGatewayRuntime>,
+    app_handle: OnceLock<tauri::AppHandle>,
 }
 
 impl AppState {
@@ -78,7 +79,18 @@ impl AppState {
         Self {
             config: Mutex::new(config),
             api_gateway_runtime: Mutex::new(crate::api_gateway::ApiGatewayRuntime::default()),
+            app_handle: OnceLock::new(),
         }
+    }
+
+    pub fn set_app_handle(&self, app_handle: tauri::AppHandle) {
+        let _ = self.app_handle.set(app_handle);
+    }
+
+    pub fn app_handle(&self) -> Result<&tauri::AppHandle, String> {
+        self.app_handle
+            .get()
+            .ok_or_else(|| "应用句柄尚未初始化".to_string())
     }
 
     pub fn save(&self) -> Result<(), String> {

@@ -21,6 +21,12 @@ export interface ApiGatewayStatus {
   targetBaseUrl?: string;
 }
 
+export interface ApiGatewayLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+}
+
 // 应用设置类型
 export interface Settings {
   // 是否在系统托盘（macOS 菜单栏）显示图标

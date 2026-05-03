@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Provider, Settings, AppMode, ApiGatewayStatus } from "../types";
+import {
+  Provider,
+  Settings,
+  AppMode,
+  ApiGatewayStatus,
+  ApiGatewayLogEntry,
+} from "../types";
 
 export class TauriAPI {
   // 获取所有供应商
@@ -156,6 +162,12 @@ export class TauriAPI {
   async onAppModeChanged(callback: (data: { mode: AppMode }) => void) {
     return await listen("app-mode-changed", (event) => {
       callback(event.payload as { mode: AppMode });
+    });
+  }
+
+  async onApiGatewayLog(callback: (entry: ApiGatewayLogEntry) => void) {
+    return await listen("api-gateway-log", (event) => {
+      callback(event.payload as ApiGatewayLogEntry);
     });
   }
 }
