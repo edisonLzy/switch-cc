@@ -2,26 +2,56 @@ use crate::api_gateway;
 use crate::config;
 use crate::provider::Provider;
 use crate::settings::Settings;
-use crate::store::{AppMode, AppState};
+use crate::store::{AppConfig, AppMode, AppState};
 use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-async fn sync_runtime_provider(state: &AppState, provider: &Provider) -> Result<(), String> {
-    let gateway_config = {
-        let config = state
-            .config
-            .lock()
-            .map_err(|e| format!("获取锁失败: {}", e))?;
-        config.api_gateway.clone()
-    };
-
-    if gateway_config.enabled {
-        api_gateway::start_or_update(state, provider, gateway_config.port).await?;
-    }
-
+async fn sync_runtime_provider(_state: &AppState, provider: &Provider) -> Result<(), String> {
     config::merge_claude_config(&provider.settings_config)?;
 
     Ok(())
+}
+
+fn configured_gateway_provider(config: &AppConfig) -> Option<Provider> {
+    config
+        .api_gateway
+        .target_provider_id
+        .as_ref()
+        .and_then(|provider_id| config.providers.get(provider_id))
+        .cloned()
+}
+
+fn build_gateway_status_payload(
+    config: &AppConfig,
+    running: bool,
+    active_route: Option<api_gateway::GatewayRouteSnapshot>,
+) -> Result<serde_json::Value, String> {
+    let configured_provider = configured_gateway_provider(config);
+    let target_provider_id = active_route
+        .as_ref()
+        .map(|route| route.provider_id.clone())
+        .or_else(|| configured_provider.as_ref().map(|provider| provider.id.clone()));
+    let target_provider_name = active_route
+        .as_ref()
+        .map(|route| route.provider_name.clone())
+        .or_else(|| configured_provider.as_ref().map(|provider| provider.name.clone()));
+    let target_base_url = match active_route.as_ref() {
+        Some(route) => Some(route.target_base_url.clone()),
+        None => configured_provider
+            .as_ref()
+            .map(api_gateway::provider_target_base_url)
+            .transpose()?,
+    };
+
+    Ok(serde_json::json!({
+        "enabled": config.api_gateway.enabled,
+        "running": running,
+        "port": config.api_gateway.port,
+        "localBaseUrl": api_gateway::gateway_base_url(config.api_gateway.port),
+        "targetProviderId": target_provider_id,
+        "targetProviderName": target_provider_name,
+        "targetBaseUrl": target_base_url,
+    }))
 }
 
 #[tauri::command]
@@ -75,7 +105,7 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
     // 验证供应商配置
     provider.validate()?;
 
-    let is_current = {
+    let (is_current, is_gateway_target, gateway_enabled, gateway_port) = {
         let mut config = state
             .config
             .lock()
@@ -86,14 +116,21 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
         }
 
         let is_current = config.current == provider.id;
+        let is_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(provider.id.as_str());
+        let gateway_enabled = config.api_gateway.enabled;
+        let gateway_port = config.api_gateway.port;
         config
             .providers
             .insert(provider.id.clone(), provider.clone());
-        is_current
+        (is_current, is_gateway_target, gateway_enabled, gateway_port)
     };
 
     if is_current {
         sync_runtime_provider(state.inner(), &provider).await?;
+    }
+
+    if gateway_enabled && is_gateway_target {
+        api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
     }
 
     state.save()
@@ -101,7 +138,7 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
 
 #[tauri::command]
 pub async fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let next_current_provider = {
+    let (next_current_provider, next_gateway_provider, stop_gateway, gateway_port) = {
         let mut config = state
             .config
             .lock()
@@ -111,9 +148,11 @@ pub async fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(
             return Err("供应商不存在".to_string());
         }
 
+        let removed_current = config.current == id;
+        let removed_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(id.as_str());
         config.providers.remove(&id);
 
-        if config.current == id {
+        if removed_current {
             config.current = config
                 .providers
                 .keys()
@@ -122,11 +161,41 @@ pub async fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(
                 .clone();
         }
 
-        config.providers.get(&config.current).cloned()
+        if removed_gateway_target {
+            config.api_gateway.target_provider_id = if config.current.is_empty() {
+                None
+            } else {
+                Some(config.current.clone())
+            };
+        }
+
+        let next_current_provider = removed_current
+            .then(|| config.providers.get(&config.current).cloned())
+            .flatten();
+        let next_gateway_provider = if config.api_gateway.enabled && removed_gateway_target {
+            config
+                .api_gateway
+                .target_provider_id
+                .as_ref()
+                .and_then(|provider_id| config.providers.get(provider_id))
+                .cloned()
+        } else {
+            None
+        };
+        let stop_gateway = config.api_gateway.enabled && removed_gateway_target && next_gateway_provider.is_none();
+        let gateway_port = config.api_gateway.port;
+
+        (next_current_provider, next_gateway_provider, stop_gateway, gateway_port)
     };
 
     if let Some(provider) = next_current_provider {
         sync_runtime_provider(state.inner(), &provider).await?;
+    }
+
+    if let Some(provider) = next_gateway_provider {
+        api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+    } else if stop_gateway {
+        api_gateway::stop(state.inner()).await?;
     }
 
     state.save()
@@ -270,30 +339,14 @@ pub async fn get_claude_config() -> Result<serde_json::Value, String> {
 pub async fn get_api_gateway_status(
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let (gateway_config, provider) = {
-        let config = state
-            .config
-            .lock()
-            .map_err(|e| format!("获取锁失败: {}", e))?;
-        let provider = config.providers.get(&config.current).cloned();
-        (config.api_gateway.clone(), provider)
-    };
-
     let running = api_gateway::is_running(state.inner())?;
-    let target_base_url = provider
-        .as_ref()
-        .map(api_gateway::provider_target_base_url)
-        .transpose()?;
+    let active_route = api_gateway::get_route_snapshot(state.inner()).await?;
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
 
-    Ok(serde_json::json!({
-        "enabled": gateway_config.enabled,
-        "running": running,
-        "port": gateway_config.port,
-        "localBaseUrl": api_gateway::gateway_base_url(gateway_config.port),
-        "targetProviderId": provider.as_ref().map(|item| item.id.clone()),
-        "targetProviderName": provider.as_ref().map(|item| item.name.clone()),
-        "targetBaseUrl": target_base_url,
-    }))
+    build_gateway_status_payload(&config, running, active_route)
 }
 
 #[tauri::command]
@@ -327,6 +380,9 @@ pub async fn set_api_gateway_enabled(
             .lock()
             .map_err(|e| format!("获取锁失败: {}", e))?;
         config.api_gateway.enabled = enabled;
+        if enabled {
+            config.api_gateway.target_provider_id = Some(provider.id.clone());
+        }
     }
 
     state.save()?;
@@ -368,6 +424,88 @@ pub async fn open_config_folder() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::ApiGatewayConfig;
+    use serde_json::json;
+
+    fn make_provider(id: &str, name: &str, base_url: &str) -> Provider {
+        Provider {
+            id: id.to_string(),
+            name: name.to_string(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "token",
+                    "ANTHROPIC_BASE_URL": base_url,
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        }
+    }
+
+    #[test]
+    fn gateway_status_uses_configured_target_provider_instead_of_current_provider() {
+        let provider_a = make_provider("provider-a", "Provider A", "https://a.example.com");
+        let provider_b = make_provider("provider-b", "Provider B", "https://b.example.com");
+        let config = AppConfig {
+            providers: HashMap::from([
+                (provider_a.id.clone(), provider_a.clone()),
+                (provider_b.id.clone(), provider_b.clone()),
+            ]),
+            current: provider_b.id.clone(),
+            app_mode: AppMode::Main,
+            api_gateway: ApiGatewayConfig {
+                enabled: true,
+                port: 3456,
+                target_provider_id: Some(provider_a.id.clone()),
+            },
+        };
+
+        let payload = build_gateway_status_payload(&config, false, None).unwrap();
+
+        assert_eq!(payload["targetProviderId"], json!(provider_a.id));
+        assert_eq!(payload["targetProviderName"], json!(provider_a.name));
+        assert_eq!(payload["targetBaseUrl"], json!("https://a.example.com"));
+    }
+
+    #[test]
+    fn gateway_status_prefers_active_route_over_saved_target() {
+        let provider_a = make_provider("provider-a", "Provider A", "https://a.example.com");
+        let provider_b = make_provider("provider-b", "Provider B", "https://b.example.com");
+        let config = AppConfig {
+            providers: HashMap::from([
+                (provider_a.id.clone(), provider_a.clone()),
+                (provider_b.id.clone(), provider_b.clone()),
+            ]),
+            current: provider_a.id.clone(),
+            app_mode: AppMode::Main,
+            api_gateway: ApiGatewayConfig {
+                enabled: true,
+                port: 3456,
+                target_provider_id: Some(provider_a.id.clone()),
+            },
+        };
+
+        let payload = build_gateway_status_payload(
+            &config,
+            true,
+            Some(api_gateway::GatewayRouteSnapshot {
+                provider_id: provider_b.id.clone(),
+                provider_name: provider_b.name.clone(),
+                target_base_url: "https://runtime.example.com".to_string(),
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(payload["targetProviderId"], json!(provider_b.id));
+        assert_eq!(payload["targetProviderName"], json!(provider_b.name));
+        assert_eq!(payload["targetBaseUrl"], json!("https://runtime.example.com"));
+    }
 }
 
 #[tauri::command]

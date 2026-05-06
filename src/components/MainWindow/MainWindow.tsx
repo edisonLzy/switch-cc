@@ -232,9 +232,7 @@ function MainWindow() {
         const gatewayStatus = await api.getApiGatewayStatus();
         setApiGatewayStatus(gatewayStatus);
         showNotification(
-          gatewayStatus.enabled
-            ? "切换成功，Claude Code 配置与 API Gateway 目标供应商已更新"
-            : "切换成功！请重启 Claude Code 终端以生效",
+          "切换成功！Claude Code 配置已更新，请重启 Claude Code 终端以生效",
           "success",
           2000,
         );
@@ -257,7 +255,7 @@ function MainWindow() {
       setApiGatewayStatus(status);
       showNotification(
         checked
-          ? `API Gateway 已启动，本地地址 ${status.localBaseUrl}；Claude Code 配置保持当前供应商`
+          ? `API Gateway 已启动，目标供应商 ${status.targetProviderName ?? "当前供应商"}，本地地址 ${status.localBaseUrl}`
           : "API Gateway 已关闭；Claude Code 配置保持当前供应商",
         "success",
         2500,

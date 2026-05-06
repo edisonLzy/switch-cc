@@ -14,6 +14,8 @@ pub enum AppMode {
 pub struct ApiGatewayConfig {
     pub enabled: bool,
     pub port: u16,
+    #[serde(default)]
+    pub target_provider_id: Option<String>,
 }
 
 impl Default for ApiGatewayConfig {
@@ -21,6 +23,7 @@ impl Default for ApiGatewayConfig {
         Self {
             enabled: false,
             port: 3456,
+            target_provider_id: None,
         }
     }
 }

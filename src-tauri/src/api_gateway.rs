@@ -93,6 +93,13 @@ struct ProviderRouteConfig {
     models: Vec<GatewayModel>,
 }
 
+#[derive(Debug, Clone)]
+pub struct GatewayRouteSnapshot {
+    pub provider_id: String,
+    pub provider_name: String,
+    pub target_base_url: String,
+}
+
 pub fn gateway_base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}")
 }
@@ -452,6 +459,27 @@ pub fn is_running(state: &AppState) -> Result<bool, String> {
         .lock()
         .map_err(|e| format!("获取 API Gateway 运行时锁失败: {}", e))?;
     Ok(runtime.server_handle.is_some())
+}
+
+pub async fn get_route_snapshot(state: &AppState) -> Result<Option<GatewayRouteSnapshot>, String> {
+    let route_state = {
+        let runtime = state
+            .api_gateway_runtime
+            .lock()
+            .map_err(|e| format!("获取 API Gateway 运行时锁失败: {}", e))?;
+        runtime.route_state.clone()
+    };
+
+    let Some(route_state) = route_state else {
+        return Ok(None);
+    };
+
+    let route = route_state.read().await;
+    Ok(Some(GatewayRouteSnapshot {
+        provider_id: route.provider_id.clone(),
+        provider_name: route.provider_name.clone(),
+        target_base_url: route.target_base_url.clone(),
+    }))
 }
 
 fn emit_log(app_handle: &tauri::AppHandle, level: &str, message: impl Into<String>) {

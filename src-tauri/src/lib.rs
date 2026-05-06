@@ -219,7 +219,7 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(app_state) = app_handle.try_state::<AppState>() {
-                        let (gateway_config, provider) = {
+                        let (gateway_config, current_provider, gateway_provider) = {
                             let config = match app_state.config.lock() {
                                 Ok(config) => config,
                                 Err(error) => {
@@ -227,12 +227,19 @@ pub fn run() {
                                     return;
                                 }
                             };
-                            let provider = config.providers.get(&config.current).cloned();
-                            (config.api_gateway.clone(), provider)
+                            let current_provider = config.providers.get(&config.current).cloned();
+                            let gateway_provider = config
+                                .api_gateway
+                                .target_provider_id
+                                .as_ref()
+                                .and_then(|provider_id| config.providers.get(provider_id))
+                                .cloned()
+                                .or_else(|| current_provider.clone());
+                            (config.api_gateway.clone(), current_provider, gateway_provider)
                         };
 
                         if gateway_config.enabled {
-                            if let Some(provider) = provider {
+                            if let Some(provider) = gateway_provider {
                                 if let Err(error) = api_gateway::start_or_update(
                                     app_state.inner(),
                                     &provider,
@@ -241,9 +248,13 @@ pub fn run() {
                                 .await
                                 {
                                     log::error!("启动 API Gateway 失败: {}", error);
-                                } else if let Err(error) = config::merge_claude_config(&provider.settings_config) {
-                                    log::error!("同步当前供应商 Claude 配置失败: {}", error);
                                 }
+                            }
+                        }
+
+                        if let Some(provider) = current_provider {
+                            if let Err(error) = config::merge_claude_config(&provider.settings_config) {
+                                log::error!("同步当前供应商 Claude 配置失败: {}", error);
                             }
                         }
                     }
