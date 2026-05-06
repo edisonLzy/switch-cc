@@ -143,7 +143,7 @@ fn configured_provider_models(provider: &Provider) -> Vec<GatewayModel> {
             continue;
         }
 
-        let id = format!("switch-cc/{}:{}", provider.id, suffix);
+        let id = format!("claude-{}:{}", provider.id, suffix);
         let display_name = if label == "Default" {
             provider.name.clone()
         } else {
@@ -160,7 +160,7 @@ fn configured_provider_models(provider: &Provider) -> Vec<GatewayModel> {
     if models.is_empty() {
         let fallback = "claude-sonnet-4-6".to_string();
         models.push(GatewayModel {
-            id: format!("switch-cc/{}:default", provider.id),
+            id: format!("claude-{}:default", provider.id),
             upstream_model: fallback,
             display_name: provider.name.clone(),
         });
@@ -395,15 +395,16 @@ pub fn build_gateway_provider_config(provider: &Provider, all_providers: &[Provi
         .collect::<Vec<_>>();
     let default_model_id = models
         .iter()
-        .find(|model| model.id.starts_with(&format!("switch-cc/{}:", provider.id)))
+        .find(|model| model.id.starts_with(&format!("claude-{}:", provider.id)))
         .or_else(|| models.first())
         .map(|model| model.id.clone())
-        .unwrap_or_else(|| format!("switch-cc/{}:default", provider.id));
+        .unwrap_or_else(|| format!("claude-{}:default", provider.id));
 
+    let provider_prefix = format!("claude-{}:", provider.id);
     let model_id_for_suffix = |suffix: &str| {
         models
             .iter()
-            .find(|model| model.id.ends_with(&format!(":{suffix}")))
+            .find(|model| model.id.starts_with(&provider_prefix) && model.id.ends_with(&format!(":{suffix}")))
             .map(|model| model.id.clone())
             .unwrap_or_else(|| default_model_id.clone())
     };
@@ -867,7 +868,7 @@ mod tests {
         );
         assert_eq!(
             env.get("ANTHROPIC_MODEL").and_then(|value| value.as_str()),
-            Some("switch-cc/minimax:default")
+            Some("claude-minimax:default")
         );
     }
 
@@ -877,7 +878,7 @@ mod tests {
         let models = configured_provider_models(&provider);
 
         assert_eq!(models.len(), 1);
-        assert_eq!(models[0].id, "switch-cc/minimax:default");
+        assert_eq!(models[0].id, "claude-minimax:default");
         assert_eq!(models[0].display_name, "MiniMax");
         assert_eq!(models[0].upstream_model, "MiniMax-M2.7");
     }
@@ -886,13 +887,13 @@ mod tests {
     fn rewrite_model_aliases_swaps_gateway_model_id() {
         let body = Bytes::from(
             serde_json::to_vec(&json!({
-                "model": "switch-cc/minimax:default",
+                "model": "claude-minimax:default",
                 "messages": [{"role": "user", "content": "hello"}]
             }))
             .unwrap(),
         );
         let aliases = std::collections::HashMap::from([(
-            "switch-cc/minimax:default".to_string(),
+            "claude-minimax:default".to_string(),
             GatewayModelRoute {
                 provider_id: "minimax".to_string(),
                 provider_name: "MiniMax".to_string(),
@@ -921,13 +922,13 @@ mod tests {
     fn extract_request_model_reads_model_field() {
         let body = Bytes::from(
             serde_json::to_vec(&json!({
-                "model": "switch-cc/minimax:default",
+                "model": "claude-minimax:default",
                 "messages": [{"role": "user", "content": "hello"}]
             }))
             .unwrap(),
         );
 
-        assert_eq!(extract_request_model(&body).as_deref(), Some("switch-cc/minimax:default"));
+        assert_eq!(extract_request_model(&body).as_deref(), Some("claude-minimax:default"));
     }
 
     #[test]
@@ -1038,5 +1039,51 @@ mod tests {
 
         let url = apply_upstream_auth_query_params(Url::parse("https://example.com/v1/messages").unwrap(), &auth);
         assert_eq!(url.as_str(), "https://example.com/v1/messages?access_token=q-token");
+    }
+
+    #[test]
+    fn gateway_config_scopes_suffix_models_to_current_provider() {
+        let provider_a = Provider {
+            id: "alpha".to_string(),
+            name: "Alpha".to_string(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "sk-a",
+                    "ANTHROPIC_BASE_URL": "https://alpha.example.com",
+                    "ANTHROPIC_MODEL": "alpha-default",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "alpha-sonnet",
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+        let provider_b = Provider {
+            id: "beta".to_string(),
+            name: "Beta".to_string(),
+            settings_config: json!({
+                "env": {
+                    "ANTHROPIC_AUTH_TOKEN": "sk-b",
+                    "ANTHROPIC_BASE_URL": "https://beta.example.com",
+                    "ANTHROPIC_MODEL": "beta-default",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL": "beta-sonnet",
+                }
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        let config = build_gateway_provider_config(&provider_a, &[provider_a.clone(), provider_b.clone()], 3456);
+        let env = config.get("env").and_then(|v| v.as_object()).unwrap();
+
+        assert_eq!(
+            env.get("ANTHROPIC_MODEL").and_then(|v| v.as_str()),
+            Some("claude-alpha:default")
+        );
+        assert_eq!(
+            env.get("ANTHROPIC_DEFAULT_SONNET_MODEL").and_then(|v| v.as_str()),
+            Some("claude-alpha:sonnet")
+        );
     }
 }
