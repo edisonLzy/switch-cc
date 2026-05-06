@@ -28,6 +28,7 @@ struct GatewayServerState {
 
 #[derive(Debug, Clone)]
 struct RouteState {
+    enabled: bool,
     provider_id: String,
     provider_name: String,
     target_base_url: String,
@@ -387,6 +388,7 @@ fn extract_request_model(body: &Bytes) -> Option<String> {
         .and_then(|json_body| json_body.get("model").and_then(|value| value.as_str()).map(str::to_string))
 }
 
+#[cfg(test)]
 pub fn build_gateway_provider_config(provider: &Provider, all_providers: &[Provider], port: u16) -> serde_json::Value {
     let mut provider_config = provider.settings_config.clone();
     let models = all_providers
@@ -487,6 +489,7 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
 
         let route_state = runtime.route_state.clone().unwrap_or_else(|| {
             let route_state = Arc::new(RwLock::new(RouteState {
+                enabled: true,
                 provider_id: provider.id.clone(),
                 provider_name: provider.name.clone(),
                 target_base_url: target_base_url.clone(),
@@ -521,6 +524,7 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
 
     {
         let mut route = route_state.write().await;
+        route.enabled = true;
         route.provider_id = provider.id.clone();
         route.provider_name = provider.name.clone();
         route.target_base_url = target_base_url.clone();
@@ -548,18 +552,32 @@ pub async fn start_or_update(state: &AppState, provider: &Provider, port: u16) -
     Ok(())
 }
 
-pub fn stop(state: &AppState) -> Result<(), String> {
-    let mut runtime = state
-        .api_gateway_runtime
-        .lock()
-        .map_err(|e| format!("获取 API Gateway 运行时锁失败: {}", e))?;
+pub async fn stop(state: &AppState) -> Result<(), String> {
+    let (route_state, shutdown_tx, server_handle) = {
+        let mut runtime = state
+            .api_gateway_runtime
+            .lock()
+            .map_err(|e| format!("获取 API Gateway 运行时锁失败: {}", e))?;
 
-    if let Some(shutdown_tx) = runtime.shutdown_tx.take() {
+        (
+            runtime.route_state.take(),
+            runtime.shutdown_tx.take(),
+            runtime.server_handle.take(),
+        )
+    };
+
+    if let Some(route_state) = route_state {
+        route_state.write().await.enabled = false;
+    }
+
+    if let Some(shutdown_tx) = shutdown_tx {
         let _ = shutdown_tx.send(());
     }
 
-    if let Some(server_handle) = runtime.server_handle.take() {
-        server_handle.abort();
+    if let Some(server_handle) = server_handle {
+        server_handle
+            .await
+            .map_err(|e| format!("等待 API Gateway 停止失败: {}", e))?;
     }
 
     log::info!("API Gateway 已停止");
@@ -602,6 +620,23 @@ async fn proxy_request(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let route_enabled = {
+        let route = state.route_state.read().await;
+        route.enabled
+    };
+
+    if !route_enabled {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({
+                "ok": false,
+                "error": "api_gateway_disabled",
+                "message": "API Gateway 已关闭",
+            })),
+        )
+            .into_response();
+    }
+
     let request_path = uri.path().to_string();
     let request_model = extract_request_model(&body);
 

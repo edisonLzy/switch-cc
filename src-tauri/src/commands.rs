@@ -7,27 +7,19 @@ use std::collections::HashMap;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 async fn sync_runtime_provider(state: &AppState, provider: &Provider) -> Result<(), String> {
-    let (gateway_config, providers) = {
+    let gateway_config = {
         let config = state
             .config
             .lock()
             .map_err(|e| format!("获取锁失败: {}", e))?;
-        (
-            config.api_gateway.clone(),
-            config.providers.values().cloned().collect::<Vec<_>>(),
-        )
+        config.api_gateway.clone()
     };
 
     if gateway_config.enabled {
         api_gateway::start_or_update(state, provider, gateway_config.port).await?;
-        config::merge_claude_config(&api_gateway::build_gateway_provider_config(
-            provider,
-            &providers,
-            gateway_config.port,
-        ))?;
-    } else {
-        config::merge_claude_config(&provider.settings_config)?;
     }
+
+    config::merge_claude_config(&provider.settings_config)?;
 
     Ok(())
 }
@@ -309,26 +301,25 @@ pub async fn set_api_gateway_enabled(
     state: State<'_, AppState>,
     enabled: bool,
 ) -> Result<serde_json::Value, String> {
-    let (provider, port, providers) = {
+    let (provider, port) = {
         let config = state
             .config
             .lock()
             .map_err(|e| format!("获取锁失败: {}", e))?;
         let provider = config.providers.get(&config.current).cloned();
         let port = config.api_gateway.port;
-        let providers = config.providers.values().cloned().collect::<Vec<_>>();
-        (provider, port, providers)
+        (provider, port)
     };
 
     let provider = provider.ok_or("当前没有可用的供应商")?;
 
     if enabled {
         api_gateway::start_or_update(state.inner(), &provider, port).await?;
-        config::merge_claude_config(&api_gateway::build_gateway_provider_config(&provider, &providers, port))?;
     } else {
-        api_gateway::stop(state.inner())?;
-        config::merge_claude_config(&provider.settings_config)?;
+        api_gateway::stop(state.inner()).await?;
     }
+
+    config::merge_claude_config(&provider.settings_config)?;
 
     {
         let mut config = state

@@ -219,7 +219,7 @@ pub fn run() {
                 let app_handle = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     if let Some(app_state) = app_handle.try_state::<AppState>() {
-                        let (gateway_config, provider, providers) = {
+                        let (gateway_config, provider) = {
                             let config = match app_state.config.lock() {
                                 Ok(config) => config,
                                 Err(error) => {
@@ -228,8 +228,7 @@ pub fn run() {
                                 }
                             };
                             let provider = config.providers.get(&config.current).cloned();
-                            let providers = config.providers.values().cloned().collect::<Vec<_>>();
-                            (config.api_gateway.clone(), provider, providers)
+                            (config.api_gateway.clone(), provider)
                         };
 
                         if gateway_config.enabled {
@@ -242,14 +241,8 @@ pub fn run() {
                                 .await
                                 {
                                     log::error!("启动 API Gateway 失败: {}", error);
-                                } else if let Err(error) = config::merge_claude_config(
-                                    &api_gateway::build_gateway_provider_config(
-                                        &provider,
-                                        &providers,
-                                        gateway_config.port,
-                                    ),
-                                ) {
-                                    log::error!("同步 API Gateway Claude 配置失败: {}", error);
+                                } else if let Err(error) = config::merge_claude_config(&provider.settings_config) {
+                                    log::error!("同步当前供应商 Claude 配置失败: {}", error);
                                 }
                             }
                         }
