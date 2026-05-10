@@ -1,9 +1,45 @@
-export interface Provider {
+export type ProviderType = "claude" | "codex";
+
+export interface CodexProviderConfig {
+  providerName: string;
+  upstreamUrl: string;
+  apiKey: string;
+  modelName: string;
+}
+
+interface ProviderBase {
   id: string;
   name: string;
-  settingsConfig: Record<string, any>; // Claude settings.json 配置对象
+  providerType?: ProviderType;
   websiteUrl?: string;
+  category?: string;
   createdAt?: number; // 添加时间戳（毫秒）
+}
+
+export interface ClaudeProvider extends ProviderBase {
+  providerType?: "claude";
+  settingsConfig: Record<string, any>; // Claude settings.json 配置对象
+  codexConfig?: never;
+}
+
+export interface CodexProvider extends ProviderBase {
+  providerType: "codex";
+  codexConfig: CodexProviderConfig;
+  settingsConfig?: never;
+}
+
+export type Provider = ClaudeProvider | CodexProvider;
+
+export function getProviderType(provider: Pick<Provider, "providerType">): ProviderType {
+  return provider.providerType === "codex" ? "codex" : "claude";
+}
+
+export function isClaudeProvider(provider: Provider): provider is ClaudeProvider {
+  return getProviderType(provider) === "claude";
+}
+
+export function isCodexProvider(provider: Provider): provider is CodexProvider {
+  return getProviderType(provider) === "codex";
 }
 
 export interface AppConfig {
@@ -25,6 +61,21 @@ export interface ApiGatewayLogEntry {
   timestamp: string;
   level: string;
   message: string;
+}
+
+export interface CodexGatewayStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  localBaseUrl: string;
+  healthUrl: string;
+  targetProviderId?: string;
+  targetProviderName?: string;
+  targetBaseUrl?: string;
+  targetModelName?: string;
+  codexConfigPath: string;
+  installedInCodexConfig: boolean;
+  providerKey: string;
 }
 
 // 应用设置类型

@@ -1,4 +1,10 @@
-import { Provider } from "../../types";
+import {
+  Provider,
+  ProviderType,
+  getProviderType,
+  isClaudeProvider,
+  isCodexProvider,
+} from "../../types";
 import {
   Trash2,
   Edit,
@@ -18,8 +24,9 @@ import { listen } from "@tauri-apps/api/event";
 
 interface ProviderListProps {
   providers: Record<string, Provider>;
-  currentProviderId: string;
-  onSwitch: (id: string) => void;
+  currentClaudeProviderId: string;
+  currentCodexProviderId: string;
+  onSwitch: (provider: Provider) => void;
   onDelete: (id: string) => void;
   onEdit: (id: string) => void;
   onNotify: (message: string, type: "success" | "error") => void;
@@ -27,21 +34,32 @@ interface ProviderListProps {
 
 function ProviderList({
   providers,
-  currentProviderId,
+  currentClaudeProviderId,
+  currentCodexProviderId,
   onSwitch,
   onDelete,
   onEdit,
   onNotify,
 }: ProviderListProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | ProviderType>("all");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const providerList = Object.values(providers);
 
+  const isCurrentProvider = (provider: Provider) =>
+    getProviderType(provider) === "codex"
+      ? provider.id === currentCodexProviderId
+      : provider.id === currentClaudeProviderId;
+
   // 启动 Claude Code
-  const handleLaunch = async (providerId: string) => {
+  const handleLaunch = async (provider: Provider) => {
+    if (!isClaudeProvider(provider)) {
+      return;
+    }
+
     try {
-      await window.api.launchClaudeWithProvider(providerId);
+      await window.api.launchClaudeWithProvider(provider.id);
       onNotify("Claude Code 已启动", "success");
     } catch (error) {
       onNotify(`启动失败: ${error}`, "error");
@@ -50,15 +68,29 @@ function ProviderList({
 
   // 过滤供应商列表
   const filteredProviders = useMemo(() => {
-    if (!searchTerm.trim()) {
-      return providerList;
-    }
+    const keyword = searchTerm.trim().toLowerCase();
+    return providerList.filter((provider) => {
+      if (typeFilter !== "all" && getProviderType(provider) !== typeFilter) {
+        return false;
+      }
 
-    const term = searchTerm.toLowerCase();
-    return providerList.filter((provider) =>
-      provider.name.toLowerCase().includes(term),
-    );
-  }, [providerList, searchTerm]);
+      if (!keyword) {
+        return true;
+      }
+
+      const haystack = [
+        provider.name,
+        provider.websiteUrl,
+        isCodexProvider(provider) ? provider.codexConfig.providerName : "",
+        isCodexProvider(provider) ? provider.codexConfig.modelName : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(keyword);
+    });
+  }, [providerList, searchTerm, typeFilter]);
 
   // 重置选中索引当过滤结果改变时
   useEffect(() => {
@@ -80,8 +112,7 @@ function ProviderList({
     items: filteredProviders,
     selectedIndex,
     setSelectedIndex,
-    onSelect: (provider) => onSwitch(provider.id),
-    currentItemId: currentProviderId,
+    onSelect: (provider) => onSwitch(provider),
     getItemId: (provider) => provider.id,
     searchInputRef,
     enableSlashKey: true,
@@ -109,7 +140,7 @@ function ProviderList({
           还没有供应商配置
         </h3>
         <p className="text-foreground opacity-70">
-          点击上方"添加供应商"按钮开始配置您的第一个 Claude 供应商
+          点击上方"添加供应商"按钮开始配置您的第一个 Claude 或 Codex 供应商
         </p>
       </div>
     );
@@ -136,6 +167,32 @@ function ProviderList({
         <Badge variant="neutral">
           {filteredProviders.length} / {providerList.length}
         </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant={typeFilter === "all" ? "default" : "neutral"}
+            onClick={() => setTypeFilter("all")}
+          >
+            全部
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={typeFilter === "claude" ? "default" : "neutral"}
+            onClick={() => setTypeFilter("claude")}
+          >
+            Claude
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={typeFilter === "codex" ? "default" : "neutral"}
+            onClick={() => setTypeFilter("codex")}
+          >
+            Codex
+          </Button>
+        </div>
       </div>
 
       {/* 列表区域 */}
@@ -161,7 +218,7 @@ function ProviderList({
                 index === selectedIndex
                   ? "shadow-[6px_6px_0px_0px] shadow-border -translate-x-1 -translate-y-1"
                   : "hover:shadow-[6px_6px_0px_0px] hover:shadow-border hover:-translate-x-1 hover:-translate-y-1 hover:ring-2 hover:ring-border"
-              } ${provider.id === currentProviderId ? "ring-4 ring-main" : ""}`}
+              } ${isCurrentProvider(provider) ? "ring-4 ring-main" : ""}`}
             >
               <CardHeader className="p-4">
                 <div className="flex items-start justify-between">
@@ -170,7 +227,10 @@ function ProviderList({
                       <CardTitle className="truncate text-lg">
                         {provider.name}
                       </CardTitle>
-                      {provider.id === currentProviderId && (
+                      <Badge variant={getProviderType(provider) === "codex" ? "neutral" : "default"}>
+                        {getProviderType(provider) === "codex" ? "Codex" : "Claude"}
+                      </Badge>
+                      {isCurrentProvider(provider) && (
                         <Badge variant="default">当前使用</Badge>
                       )}
                     </div>
@@ -196,15 +256,21 @@ function ProviderList({
                           创建于 {formatTimestamp(provider.createdAt)}
                         </span>
                       )}
+
+                      {isCodexProvider(provider) && (
+                        <span className="text-foreground opacity-70">
+                          模型 {provider.codexConfig.modelName}
+                        </span>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
-                    {provider.id !== currentProviderId && (
+                    {!isCurrentProvider(provider) && (
                       <Button
                         onClick={(e) => {
                           e.stopPropagation();
-                          onSwitch(provider.id);
+                          onSwitch(provider);
                         }}
                         size="sm"
                       >
@@ -212,17 +278,19 @@ function ProviderList({
                       </Button>
                     )}
 
-                    <Button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleLaunch(provider.id);
-                      }}
-                      variant="neutral"
-                      size="icon"
-                      title="启动 Claude Code"
-                    >
-                      <Terminal size={16} />
-                    </Button>
+                    {isClaudeProvider(provider) && (
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleLaunch(provider);
+                        }}
+                        variant="neutral"
+                        size="icon"
+                        title="启动 Claude Code"
+                      >
+                        <Terminal size={16} />
+                      </Button>
+                    )}
 
                     <Button
                       onClick={(e) => {

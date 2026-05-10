@@ -1,4 +1,168 @@
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderType {
+    Claude,
+    Codex,
+}
+
+impl Default for ProviderType {
+    fn default() -> Self {
+        Self::Claude
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexProviderConfig {
+    #[serde(rename = "providerName")]
+    pub provider_name: String,
+    #[serde(rename = "upstreamUrl")]
+    pub upstream_url: String,
+    #[serde(rename = "apiKey")]
+    pub api_key: String,
+    #[serde(rename = "modelName")]
+    pub model_name: String,
+}
+
+impl CodexProviderConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.provider_name.trim().is_empty() {
+            return Err("Codex 供应商名称不能为空".to_string());
+        }
+
+        if self.model_name.trim().is_empty() {
+            return Err("Codex 模型名称不能为空".to_string());
+        }
+
+        if self.api_key.trim().is_empty() {
+            return Err("Codex API Key 不能为空".to_string());
+        }
+
+        let upstream_url = self.upstream_url.trim();
+        if upstream_url.is_empty() {
+            return Err("Codex 上游地址不能为空".to_string());
+        }
+
+        Url::parse(upstream_url).map_err(|error| format!("Codex 上游地址无效: {}", error))?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexProvider {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "codexConfig")]
+    pub codex_config: CodexProviderConfig,
+    #[serde(rename = "websiteUrl")]
+    pub website_url: Option<String>,
+    pub category: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<u64>,
+}
+
+impl CodexProvider {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("供应商名称不能为空".to_string());
+        }
+
+        self.codex_config.validate()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderPayload {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "providerType", default)]
+    pub provider_type: ProviderType,
+    #[serde(rename = "settingsConfig", default)]
+    pub settings_config: Option<serde_json::Value>,
+    #[serde(rename = "codexConfig", default)]
+    pub codex_config: Option<CodexProviderConfig>,
+    #[serde(rename = "websiteUrl")]
+    pub website_url: Option<String>,
+    pub category: Option<String>,
+    #[serde(rename = "createdAt")]
+    pub created_at: Option<u64>,
+}
+
+impl ProviderPayload {
+    pub fn validate(&self) -> Result<(), String> {
+        match self.provider_type {
+            ProviderType::Claude => self.clone().into_claude_provider()?.validate(),
+            ProviderType::Codex => self.clone().into_codex_provider()?.validate(),
+        }
+    }
+
+    pub fn into_claude_provider(self) -> Result<Provider, String> {
+        if self.provider_type != ProviderType::Claude {
+            return Err("当前供应商不是 Claude 类型".to_string());
+        }
+
+        let settings_config = self
+            .settings_config
+            .ok_or_else(|| "缺少 Claude settingsConfig".to_string())?;
+
+        Ok(Provider {
+            id: self.id,
+            name: self.name,
+            settings_config,
+            website_url: self.website_url,
+            category: self.category,
+            created_at: self.created_at,
+        })
+    }
+
+    pub fn into_codex_provider(self) -> Result<CodexProvider, String> {
+        if self.provider_type != ProviderType::Codex {
+            return Err("当前供应商不是 Codex 类型".to_string());
+        }
+
+        let codex_config = self
+            .codex_config
+            .ok_or_else(|| "缺少 Codex codexConfig".to_string())?;
+
+        Ok(CodexProvider {
+            id: self.id,
+            name: self.name,
+            codex_config,
+            website_url: self.website_url,
+            category: self.category,
+            created_at: self.created_at,
+        })
+    }
+
+    pub fn from_claude_provider(provider: Provider) -> Self {
+        Self {
+            id: provider.id,
+            name: provider.name,
+            provider_type: ProviderType::Claude,
+            settings_config: Some(provider.settings_config),
+            codex_config: None,
+            website_url: provider.website_url,
+            category: provider.category,
+            created_at: provider.created_at,
+        }
+    }
+
+    pub fn from_codex_provider(provider: CodexProvider) -> Self {
+        Self {
+            id: provider.id,
+            name: provider.name,
+            provider_type: ProviderType::Codex,
+            settings_config: None,
+            codex_config: Some(provider.codex_config),
+            website_url: provider.website_url,
+            category: provider.category,
+            created_at: provider.created_at,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provider {
@@ -279,5 +443,46 @@ mod tests {
         let result = provider.validate();
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "env 必须是一个对象");
+    }
+
+    #[test]
+    fn codex_provider_validation_requires_non_empty_fields() {
+        let provider = CodexProvider {
+            id: "codex-1".to_string(),
+            name: "Xiaomi MiMo".to_string(),
+            codex_config: CodexProviderConfig {
+                provider_name: "mimo".to_string(),
+                upstream_url: "https://token-plan-sgp.xiaomimimo.com/v1".to_string(),
+                api_key: "tp-test".to_string(),
+                model_name: "mimo-v2.5-pro".to_string(),
+            },
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        assert!(provider.validate().is_ok());
+    }
+
+    #[test]
+    fn provider_payload_converts_codex_provider() {
+        let payload = ProviderPayload {
+            id: "codex-1".to_string(),
+            name: "MiMo".to_string(),
+            provider_type: ProviderType::Codex,
+            settings_config: None,
+            codex_config: Some(CodexProviderConfig {
+                provider_name: "mimo".to_string(),
+                upstream_url: "https://token-plan-sgp.xiaomimimo.com/v1".to_string(),
+                api_key: "tp-test".to_string(),
+                model_name: "mimo-v2.5-pro".to_string(),
+            }),
+            website_url: None,
+            category: None,
+            created_at: None,
+        };
+
+        let provider = payload.into_codex_provider().unwrap();
+        assert_eq!(provider.codex_config.model_name, "mimo-v2.5-pro");
     }
 }

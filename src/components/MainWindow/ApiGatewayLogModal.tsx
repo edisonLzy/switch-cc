@@ -13,15 +13,25 @@ import { Input } from "../ui/input";
 interface ApiGatewayLogModalProps {
   isOpen: boolean;
   onClose: () => void;
+  title?: string;
   localBaseUrl?: string;
+  details?: string[];
   logs: ApiGatewayLogEntry[];
+  actionLabel?: string;
+  onAction?: () => void;
+  actionDisabled?: boolean;
 }
 
 function ApiGatewayLogModal({
   isOpen,
   onClose,
+  title = "API Gateway 日志",
   localBaseUrl,
+  details = [],
   logs,
+  actionLabel,
+  onAction,
+  actionDisabled = false,
 }: ApiGatewayLogModalProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -54,12 +64,27 @@ function ApiGatewayLogModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <Waypoints size={18} />
-            <DialogTitle>API Gateway 日志</DialogTitle>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Waypoints size={18} />
+              <DialogTitle>{title}</DialogTitle>
+            </div>
+            {actionLabel && onAction && (
+              <button
+                type="button"
+                onClick={onAction}
+                disabled={actionDisabled}
+                className="rounded-base border-2 border-border bg-secondary-background px-3 py-1 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {actionLabel}
+              </button>
+            )}
           </div>
-          <div className="text-sm text-foreground opacity-70">
-            {localBaseUrl ? `本地地址 ${localBaseUrl}` : "实时日志流"}
+          <div className="space-y-1 text-sm text-foreground opacity-70">
+            <div>{localBaseUrl ? `本地地址 ${localBaseUrl}` : "实时日志流"}</div>
+            {details.map((detail) => (
+              <div key={detail}>{detail}</div>
+            ))}
           </div>
         </DialogHeader>
 

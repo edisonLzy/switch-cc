@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Provider } from "../../types";
+import { Provider, getProviderType } from "../../types";
 import { Settings, Monitor, Check, ChevronRight } from "lucide-react";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardHeader } from "../ui/card";
@@ -43,7 +43,13 @@ function MenuBarWindow() {
       setIsLoading(true);
       const loadedProviders = await api.getProviders();
       const currentId = await api.getCurrentProvider();
-      setProviders(loadedProviders);
+      setProviders(
+        Object.fromEntries(
+          Object.entries(loadedProviders).filter(
+            ([, provider]) => getProviderType(provider) === "claude",
+          ),
+        ),
+      );
       setCurrentProviderId(currentId);
     } catch (error) {
       console.error("加载供应商列表失败:", error);
