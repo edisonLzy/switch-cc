@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use toml_edit::{value, DocumentMut, Item, Table};
 
 pub const LOCAL_GATEWAY_PROVIDER_KEY: &str = "switch_cc_gateway";
-const LOCAL_GATEWAY_ENV_KEY: &str = "DUMMY_KEY";
 
 pub fn get_codex_config_dir() -> Result<PathBuf, String> {
     let home_dir = dirs::home_dir().ok_or("无法获取用户目录")?;
@@ -57,14 +56,18 @@ fn upsert_local_gateway_provider(
 
     let providers_table = ensure_root_table(&mut document, "model_providers")?;
     let gateway_table = ensure_child_table(providers_table, LOCAL_GATEWAY_PROVIDER_KEY)?;
-    gateway_table["name"] = value(format!("Switch CC Gateway ({})", provider.name));
-    gateway_table["base_url"] = value(codex_gateway::gateway_base_url(port));
-    gateway_table["upstream_url"] = value(provider.codex_config.upstream_url.trim());
-    gateway_table["wire_api"] = value("responses");
-    gateway_table["requires_openai_auth"] = value(false);
-    gateway_table["env_key"] = value(LOCAL_GATEWAY_ENV_KEY);
+    write_gateway_provider_config(gateway_table, provider, port);
 
     save_document(&document)
+}
+
+fn write_gateway_provider_config(gateway_table: &mut Table, provider: &CodexProvider, port: u16) {
+    gateway_table["name"] = value(format!("Switch CC Gateway ({})", provider.name));
+    gateway_table["base_url"] = value(codex_gateway::gateway_base_url(port));
+    gateway_table["wire_api"] = value("responses");
+    gateway_table["requires_openai_auth"] = value(false);
+    gateway_table.remove("env_key");
+    gateway_table.remove("upstream_url");
 }
 
 fn load_document() -> Result<DocumentMut, String> {
@@ -152,7 +155,9 @@ mod tests {
         document["preferred_auth_method"] = value("apikey");
         let providers_table = ensure_root_table(&mut document, "model_providers").unwrap();
         let gateway_table = ensure_child_table(providers_table, LOCAL_GATEWAY_PROVIDER_KEY).unwrap();
-        gateway_table["base_url"] = value(codex_gateway::gateway_base_url(7373));
+        gateway_table["env_key"] = value("DUMMY_KEY");
+        gateway_table["upstream_url"] = value(provider.codex_config.upstream_url.trim());
+        write_gateway_provider_config(gateway_table, &provider, 7373);
 
         assert_eq!(document["model"].as_str(), Some("mimo-v2-pro"));
         assert_eq!(document["model_provider"].as_str(), Some(LOCAL_GATEWAY_PROVIDER_KEY));
@@ -160,6 +165,14 @@ mod tests {
             document["model_providers"][LOCAL_GATEWAY_PROVIDER_KEY]["base_url"].as_str(),
             Some("http://127.0.0.1:7373/v1")
         );
+        assert!(!document["model_providers"][LOCAL_GATEWAY_PROVIDER_KEY]
+            .as_table_like()
+            .unwrap()
+            .contains_key("env_key"));
+        assert!(!document["model_providers"][LOCAL_GATEWAY_PROVIDER_KEY]
+            .as_table_like()
+            .unwrap()
+            .contains_key("upstream_url"));
         assert_eq!(document["projects"]["/tmp"]["trust_level"].as_str(), Some("trusted"));
     }
 }
