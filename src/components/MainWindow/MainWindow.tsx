@@ -54,6 +54,7 @@ function MainWindow() {
   const [codexGatewayLogs, setCodexGatewayLogs] = useState<ApiGatewayLogEntry[]>([]);
   const [isApiGatewayPending, setIsApiGatewayPending] = useState(false);
   const [isCodexGatewayPending, setIsCodexGatewayPending] = useState(false);
+  const [isCodexGatewayDiskLoggingPending, setIsCodexGatewayDiskLoggingPending] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
@@ -391,6 +392,27 @@ function MainWindow() {
     }
   };
 
+  const handleToggleCodexGatewayDiskLogging = async (checked: boolean) => {
+    try {
+      setIsCodexGatewayDiskLoggingPending(true);
+      const status = await api.setCodexGatewayDiskLoggingEnabled(checked);
+      setCodexGatewayStatus(status);
+      showNotification(
+        checked
+          ? `已开启 Codex Gateway 日志落盘，目录 ${status.logDirectory}`
+          : "已关闭 Codex Gateway 日志落盘",
+        "success",
+        2500,
+      );
+    } catch (error) {
+      console.error("切换 Codex Gateway 日志落盘失败:", error);
+      const errorMessage = extractErrorMessage(error);
+      showNotification(`日志落盘设置失败：${errorMessage}`, "error");
+    } finally {
+      setIsCodexGatewayDiskLoggingPending(false);
+    }
+  };
+
   // 自动从 live 导入一条默认供应商（仅首次初始化时）
   const handleAutoImportDefault = async () => {
     try {
@@ -662,6 +684,9 @@ function MainWindow() {
             codexGatewayStatus?.targetBaseUrl
               ? `上游地址 ${codexGatewayStatus.targetBaseUrl}`
               : "",
+            codexGatewayStatus?.logDirectory
+              ? `本地日志目录 ${codexGatewayStatus.logDirectory}${codexGatewayStatus.diskLoggingEnabled ? "" : " (已关闭)"}`
+              : "",
             codexGatewayStatus
               ? `Codex 配置 ${codexGatewayStatus.codexConfigPath}`
               : "",
@@ -675,6 +700,14 @@ function MainWindow() {
           actionLabel="Add Local Gateway"
           onAction={handleInstallCodexGateway}
           actionDisabled={codexProviderCount === 0}
+          diskLoggingEnabled={codexGatewayStatus?.diskLoggingEnabled ?? false}
+          onDiskLoggingChange={handleToggleCodexGatewayDiskLogging}
+          diskLoggingDisabled={isCodexGatewayDiskLoggingPending}
+          diskLoggingDescription={
+            codexGatewayStatus?.diskLoggingEnabled
+              ? `已开启后，新的转发日志会追加写入 ${codexGatewayStatus.logDirectory}`
+              : `默认关闭。开启后会将所有转发日志写入 ${codexGatewayStatus?.logDirectory ?? "~/.switchcc/logs"}`
+          }
         />
       )}
 

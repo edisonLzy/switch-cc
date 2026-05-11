@@ -69,6 +69,8 @@ export interface CodexGatewayStatus {
   port: number;
   localBaseUrl: string;
   healthUrl: string;
+  diskLoggingEnabled: boolean;
+  logDirectory: string;
   targetProviderId?: string;
   targetProviderName?: string;
   targetBaseUrl?: string;

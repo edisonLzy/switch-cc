@@ -13,8 +13,12 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::Emitter;
+use std::time::Instant;
+use tauri::{Emitter, Manager};
 use tokio::sync::{oneshot, RwLock};
 use uuid::Uuid;
 
@@ -115,7 +119,6 @@ pub async fn get_route_snapshot(state: &AppState) -> Result<Option<GatewayRouteS
 
 pub async fn start_or_update(state: &AppState, provider: &CodexProvider, port: u16) -> Result<(), String> {
     provider.validate()?;
-
     let next_route = RouteState {
         enabled: true,
         provider_id: provider.id.clone(),
@@ -142,6 +145,9 @@ pub async fn start_or_update(state: &AppState, provider: &CodexProvider, port: u
             let server_state = GatewayServerState {
                 app_handle: state.app_handle()?.clone(),
                 client: reqwest::Client::builder()
+                    .connect_timeout(std::time::Duration::from_secs(30))
+                    .tcp_keepalive(std::time::Duration::from_secs(60))
+                    .pool_idle_timeout(std::time::Duration::from_secs(90))
                     .build()
                     .map_err(|error| format!("初始化 Codex Gateway HTTP 客户端失败: {}", error))?,
                 route_state: route_state.clone(),
@@ -212,12 +218,56 @@ pub async fn stop(state: &AppState) -> Result<(), String> {
 }
 
 fn emit_log(app_handle: &tauri::AppHandle, level: &str, message: impl Into<String>) {
+    let message = message.into();
+    let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    if disk_logging_enabled(app_handle) {
+        if let Err(error) = append_log_to_disk(&timestamp, level, &message) {
+            log::warn!("Codex Gateway 写入磁盘日志失败: {}", error);
+        }
+    }
+
     let payload = json!({
-        "timestamp": chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+        "timestamp": timestamp,
         "level": level,
-        "message": message.into(),
+        "message": message,
     });
     let _ = app_handle.emit("codex-gateway-log", payload);
+}
+
+pub fn log_directory() -> Result<PathBuf, String> {
+    let home_dir = dirs::home_dir().ok_or("无法获取用户目录")?;
+    Ok(home_dir.join(".switchcc").join("logs"))
+}
+
+fn disk_logging_enabled(app_handle: &tauri::AppHandle) -> bool {
+    let state = app_handle.state::<AppState>();
+    state
+        .config
+        .lock()
+        .map(|config| config.codex_gateway.disk_logging_enabled)
+        .unwrap_or(false)
+}
+
+fn append_log_to_disk(timestamp: &str, level: &str, message: &str) -> Result<(), String> {
+    let log_dir = log_directory()?;
+    if !log_dir.exists() {
+        fs::create_dir_all(&log_dir).map_err(|error| format!("创建日志目录失败: {}", error))?;
+    }
+
+    let log_file_path = log_dir.join(format!(
+        "codex-gateway-{}.log",
+        chrono::Local::now().format("%Y-%m-%d")
+    ));
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_file_path)
+        .map_err(|error| format!("打开日志文件失败: {}", error))?;
+
+    writeln!(file, "[{}] [{}] {}", timestamp, level.to_uppercase(), message)
+        .map_err(|error| format!("写入日志文件失败: {}", error))
 }
 
 async fn run_server(
@@ -225,6 +275,7 @@ async fn run_server(
     server_state: GatewayServerState,
     mut shutdown_rx: oneshot::Receiver<()>,
 ) {
+    let app_handle = server_state.app_handle.clone();
     let app = Router::new()
         .route("/health", get(get_health).head(head_health))
         .route("/v1/models", get(get_models))
@@ -235,6 +286,11 @@ async fn run_server(
         Ok(listener) => listener,
         Err(error) => {
             log::error!("Codex Gateway 监听端口 {} 失败: {}", port, error);
+            emit_log(
+                &app_handle,
+                "error",
+                format!("Codex Gateway 监听端口 {} 失败: {}", port, error),
+            );
             return;
         }
     };
@@ -244,6 +300,11 @@ async fn run_server(
         result = server => {
             if let Err(error) = result {
                 log::error!("Codex Gateway 服务异常退出: {}", error);
+                emit_log(
+                    &app_handle,
+                    "error",
+                    format!("Codex Gateway 服务异常退出: {}", error),
+                );
             }
         }
         _ = &mut shutdown_rx => {}
@@ -337,48 +398,48 @@ async fn post_responses(
         }
     };
 
-    let mut request_builder = state.client.post(upstream_url.clone());
-    request_builder = request_builder
-        .bearer_auth(route.api_key.clone())
-        .header(reqwest::header::CONTENT_TYPE, "application/json");
+    if !stream_requested {
+        let upstream_response = match build_upstream_request(
+            &state.client,
+            &route,
+            &upstream_url,
+            &chat_request,
+            false,
+        )
+        .send()
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                emit_log(&state.app_handle, "error", format!("Codex Gateway 上游请求失败: {}", error));
+                return (
+                    StatusCode::BAD_GATEWAY,
+                    Json(json!({
+                        "error": "upstream_request_failed",
+                        "message": error.to_string(),
+                    })),
+                )
+                    .into_response();
+            }
+        };
 
-    if stream_requested {
-        request_builder = request_builder.header(reqwest::header::ACCEPT, "text/event-stream");
-    }
-
-    let upstream_response = match request_builder.json(&chat_request).send().await {
-        Ok(response) => response,
-        Err(error) => {
-            emit_log(&state.app_handle, "error", format!("Codex Gateway 上游请求失败: {}", error));
-            return (
-                StatusCode::BAD_GATEWAY,
-                Json(json!({
-                    "error": "upstream_request_failed",
-                    "message": error.to_string(),
-                })),
-            )
-                .into_response();
+        let status = upstream_response.status();
+        if !status.is_success() {
+            let body_text = upstream_response.text().await.unwrap_or_default();
+            emit_log(
+                &state.app_handle,
+                "error",
+                format!("Codex Gateway 上游返回错误: status={} body={}", status, body_text),
+            );
+            return (status, body_text).into_response();
         }
-    };
 
-    let status = upstream_response.status();
-    if !status.is_success() {
-        let body_text = upstream_response.text().await.unwrap_or_default();
         emit_log(
             &state.app_handle,
-            "error",
-            format!("Codex Gateway 上游返回错误: status={} body={}", status, body_text),
+            "info",
+            format!("Codex Gateway 转发上游成功: {}", upstream_url),
         );
-        return (status, body_text).into_response();
-    }
 
-    emit_log(
-        &state.app_handle,
-        "info",
-        format!("Codex Gateway 转发上游成功: {}", upstream_url),
-    );
-
-    if !stream_requested {
         let upstream_json = match upstream_response.json::<Value>().await {
             Ok(json) => json,
             Err(error) => {
@@ -399,8 +460,36 @@ async fn post_responses(
     let response_id = format!("resp_{}", Uuid::new_v4().simple());
     let message_item_id = format!("msg_{}", Uuid::new_v4().simple());
     let app_handle = state.app_handle.clone();
+    let target_model_name = route.target_model_name.clone();
+    let client = state.client.clone();
 
     let event_stream = stream! {
+        let stream_started_at = Instant::now();
+        let mut raw_event_count = 0usize;
+        let mut parsed_chunk_count = 0usize;
+        let mut forwarded_text_event_count = 0usize;
+        let mut forwarded_text_chars = 0usize;
+        let mut forwarded_tool_call_delta_count = 0usize;
+        let mut first_upstream_event_logged = false;
+
+        emit_log(
+            &app_handle,
+            "info",
+            format!(
+                "Codex Gateway SSE 下游流已创建: response_id={} model={} upstream={}",
+                response_id, target_model_name, upstream_url
+            ),
+        );
+
+        emit_log(
+            &app_handle,
+            "info",
+            format!(
+                "Codex Gateway SSE 向下游发送 response.created: response_id={} elapsed_ms={}",
+                response_id,
+                stream_started_at.elapsed().as_millis()
+            ),
+        );
         yield Ok::<Event, Infallible>(json_event(
             "response.created",
             json!({
@@ -409,46 +498,260 @@ async fn post_responses(
             }),
         ));
 
+        emit_log(
+            &app_handle,
+            "info",
+            format!(
+                "Codex Gateway SSE 开始请求上游: response_id={} url={} elapsed_ms={}",
+                response_id,
+                upstream_url,
+                stream_started_at.elapsed().as_millis()
+            ),
+        );
+
+        let upstream_response = match build_upstream_request(
+            &client,
+            &route,
+            &upstream_url,
+            &chat_request,
+            true,
+        )
+        .send()
+        .await
+        {
+            Ok(response) => response,
+            Err(error) => {
+                emit_log(&app_handle, "error", format!("Codex Gateway 上游请求失败: {}", error));
+                yield Ok(json_event(
+                    "response.failed",
+                    response_failed_event(&response_id, error.to_string()),
+                ));
+                return;
+            }
+        };
+
+        let status = upstream_response.status();
+        if !status.is_success() {
+            let body_text = upstream_response.text().await.unwrap_or_default();
+            let error_message = format!("上游返回错误: status={} body={}", status, body_text);
+            emit_log(&app_handle, "error", format!("Codex Gateway {}", error_message));
+            emit_log(
+                &app_handle,
+                "error",
+                format!(
+                    "Codex Gateway SSE 向下游发送 response.failed: response_id={} reason={} elapsed_ms={}",
+                    response_id,
+                    error_message,
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
+            yield Ok(json_event(
+                "response.failed",
+                response_failed_event(&response_id, error_message),
+            ));
+            return;
+        }
+
+        emit_log(
+            &app_handle,
+            "info",
+            format!(
+                "Codex Gateway SSE 上游 HTTP 已连接: response_id={} status={} url={} elapsed_ms={}",
+                response_id,
+                status,
+                upstream_url,
+                stream_started_at.elapsed().as_millis()
+            ),
+        );
+
         let mut usage_totals = UsageTotals::default();
         let mut stream_state = StreamState::default();
         let mut upstream_stream = upstream_response.bytes_stream().eventsource();
+        let mut received_done_event = false;
+        let mut saw_terminal_finish_reason = false;
 
-        while let Some(next_event) = upstream_stream.next().await {
+        let max_consecutive_errors = 5usize;
+        let read_timeout = std::time::Duration::from_secs(300);
+        let mut consecutive_errors = 0usize;
+
+        loop {
+            let next_event = match tokio::time::timeout(read_timeout, upstream_stream.next()).await {
+                Ok(Some(next_event)) => next_event,
+                Ok(None) => {
+                    emit_log(
+                        &app_handle,
+                        "warn",
+                        format!(
+                            "Codex Gateway SSE 上游流自然结束: response_id={} raw_events={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} elapsed_ms={}",
+                            response_id,
+                            raw_event_count,
+                            parsed_chunk_count,
+                            forwarded_text_event_count,
+                            forwarded_text_chars,
+                            forwarded_tool_call_delta_count,
+                            stream_started_at.elapsed().as_millis()
+                        ),
+                    );
+                    break;
+                }
+                Err(_) => {
+                    consecutive_errors += 1;
+                    emit_log(&app_handle, "warn", format!(
+                        "Codex Gateway SSE 读取超时 ({}/{}): response_id={} 超过 {} 秒未收到上游事件 raw_events={} parsed_chunks={} elapsed_ms={}",
+                        consecutive_errors,
+                        max_consecutive_errors,
+                        response_id,
+                        read_timeout.as_secs()
+                        ,raw_event_count
+                        ,parsed_chunk_count
+                        ,stream_started_at.elapsed().as_millis()
+                    ));
+                    if consecutive_errors >= max_consecutive_errors {
+                        emit_log(&app_handle, "error", format!(
+                            "Codex Gateway 连续 {} 次读取超时，中断流: response_id={} raw_events={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} elapsed_ms={}",
+                            max_consecutive_errors,
+                            response_id,
+                            raw_event_count,
+                            parsed_chunk_count,
+                            forwarded_text_event_count,
+                            forwarded_text_chars,
+                            forwarded_tool_call_delta_count,
+                            stream_started_at.elapsed().as_millis()
+                        ));
+                        emit_log(
+                            &app_handle,
+                            "error",
+                            format!(
+                                "Codex Gateway SSE 向下游发送 response.failed: response_id={} reason=连续 {} 次 SSE 读取超时 elapsed_ms={}",
+                                response_id,
+                                max_consecutive_errors,
+                                stream_started_at.elapsed().as_millis()
+                            ),
+                        );
+                        yield Ok(json_event(
+                            "response.failed",
+                            response_failed_event(
+                                &response_id,
+                                format!(
+                                    "连续 {} 次 SSE 读取超时: 超过 {} 秒未收到上游事件",
+                                    max_consecutive_errors,
+                                    read_timeout.as_secs()
+                                ),
+                            ),
+                        ));
+                        return;
+                    }
+                    continue;
+                }
+            };
+
             match next_event {
                 Ok(event) => {
+                    consecutive_errors = 0;
+                    raw_event_count += 1;
                     let data = event.data.trim();
-                    if data.is_empty() || data == "[DONE]" {
+
+                    if !first_upstream_event_logged {
+                        first_upstream_event_logged = true;
+                        emit_log(
+                            &app_handle,
+                            "info",
+                            format!(
+                                "Codex Gateway SSE 收到上游首包: response_id={} raw_event={} data_len={} elapsed_ms={}",
+                                response_id,
+                                raw_event_count,
+                                data.len(),
+                                stream_started_at.elapsed().as_millis()
+                            ),
+                        );
+                    }
+
+                    if data.is_empty() {
+                        emit_log(
+                            &app_handle,
+                            "info",
+                            format!(
+                                "Codex Gateway SSE 收到空事件: response_id={} raw_event={} elapsed_ms={}",
+                                response_id,
+                                raw_event_count,
+                                stream_started_at.elapsed().as_millis()
+                            ),
+                        );
+                        continue;
+                    }
+
+                    if data == "[DONE]" {
+                        received_done_event = true;
+                        emit_log(
+                            &app_handle,
+                            "info",
+                            format!(
+                                "Codex Gateway SSE 收到上游 DONE: response_id={} raw_event={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} elapsed_ms={}",
+                                response_id,
+                                raw_event_count,
+                                parsed_chunk_count,
+                                forwarded_text_event_count,
+                                forwarded_text_chars,
+                                forwarded_tool_call_delta_count,
+                                stream_started_at.elapsed().as_millis()
+                            ),
+                        );
                         continue;
                     }
 
                     let chunk = match serde_json::from_str::<Value>(data) {
                         Ok(chunk) => chunk,
                         Err(error) => {
-                            emit_log(&app_handle, "error", format!("Codex Gateway SSE 解析失败: {}", error));
-                            yield Ok(json_event(
-                                "response.failed",
-                                json!({
-                                    "type": "response.failed",
-                                    "response": {
-                                        "id": response_id,
-                                        "status": "failed",
-                                        "error": { "message": error.to_string() }
-                                    }
-                                }),
-                            ));
-                            return;
+                            emit_log(
+                                &app_handle,
+                                "warn",
+                                format!(
+                                    "Codex Gateway SSE 单条解析失败 (跳过): response_id={} raw_event={} data_len={} preview={} error={}",
+                                    response_id,
+                                    raw_event_count,
+                                    data.len(),
+                                    preview_text_for_log(data, 120),
+                                    error
+                                ),
+                            );
+                            continue;
                         }
                     };
+
+                    parsed_chunk_count += 1;
+                    let mut chunk_delta_chars = 0usize;
+                    let mut chunk_message_chars = 0usize;
+                    let mut chunk_tool_call_deltas = 0usize;
+                    let mut chunk_finish_reasons = Vec::new();
+                    let usage_present = chunk.get("usage").is_some();
 
                     usage_totals.merge(chunk.get("usage"));
 
                     if let Some(choices) = chunk.get("choices").and_then(Value::as_array) {
                         for choice in choices {
+                            if let Some(finish_reason) = choice_finish_reason(choice) {
+                                saw_terminal_finish_reason = true;
+                                chunk_finish_reasons.push(finish_reason.to_string());
+                            }
+
                             if let Some(delta) = choice.get("delta") {
                                 let delta_text = extract_message_text(delta.get("content"));
                                 if !delta_text.is_empty() {
+                                    let delta_chars = delta_text.chars().count();
+                                    chunk_delta_chars += delta_chars;
                                     if !stream_state.message_started {
                                         stream_state.message_started = true;
+                                        emit_log(
+                                            &app_handle,
+                                            "info",
+                                            format!(
+                                                "Codex Gateway SSE 向下游发送 response.output_item.added: response_id={} raw_event={} parsed_chunk={} elapsed_ms={}",
+                                                response_id,
+                                                raw_event_count,
+                                                parsed_chunk_count,
+                                                stream_started_at.elapsed().as_millis()
+                                            ),
+                                        );
                                         yield Ok(json_event(
                                             "response.output_item.added",
                                             assistant_message_added_event(&message_item_id, ""),
@@ -456,6 +759,22 @@ async fn post_responses(
                                     }
 
                                     stream_state.message_text.push_str(&delta_text);
+                                    forwarded_text_event_count += 1;
+                                    forwarded_text_chars += delta_chars;
+                                    emit_log(
+                                        &app_handle,
+                                        "info",
+                                        format!(
+                                            "Codex Gateway SSE 向下游转发文本增量: response_id={} raw_event={} parsed_chunk={} delta_chars={} total_chars={} preview={} elapsed_ms={}",
+                                            response_id,
+                                            raw_event_count,
+                                            parsed_chunk_count,
+                                            delta_chars,
+                                            forwarded_text_chars,
+                                            preview_text_for_log(&delta_text, 80),
+                                            stream_started_at.elapsed().as_millis()
+                                        ),
+                                    );
                                     yield Ok(json_event(
                                         "response.output_text.delta",
                                         json!({
@@ -466,6 +785,21 @@ async fn post_responses(
                                 }
 
                                 if let Some(tool_calls) = delta.get("tool_calls").and_then(Value::as_array) {
+                                    chunk_tool_call_deltas += tool_calls.len();
+                                    forwarded_tool_call_delta_count += tool_calls.len();
+                                    emit_log(
+                                        &app_handle,
+                                        "info",
+                                        format!(
+                                            "Codex Gateway SSE 收到工具调用增量: response_id={} raw_event={} parsed_chunk={} delta_count={} total_delta_count={} elapsed_ms={}",
+                                            response_id,
+                                            raw_event_count,
+                                            parsed_chunk_count,
+                                            tool_calls.len(),
+                                            forwarded_tool_call_delta_count,
+                                            stream_started_at.elapsed().as_millis()
+                                        ),
+                                    );
                                     apply_tool_call_deltas(&mut stream_state.tool_calls, tool_calls, &response_id);
                                 }
                             }
@@ -473,36 +807,174 @@ async fn post_responses(
                             if let Some(message) = choice.get("message") {
                                 let message_text = extract_message_text(message.get("content"));
                                 if !message_text.is_empty() {
+                                    chunk_message_chars += message_text.chars().count();
                                     stream_state.message_text = message_text;
                                     stream_state.message_started = true;
+                                    emit_log(
+                                        &app_handle,
+                                        "info",
+                                        format!(
+                                            "Codex Gateway SSE 收到完整 message 覆盖: response_id={} raw_event={} parsed_chunk={} message_chars={} preview={} elapsed_ms={}",
+                                            response_id,
+                                            raw_event_count,
+                                            parsed_chunk_count,
+                                            chunk_message_chars,
+                                            preview_text_for_log(&stream_state.message_text, 80),
+                                            stream_started_at.elapsed().as_millis()
+                                        ),
+                                    );
                                 }
 
                                 if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
+                                    chunk_tool_call_deltas += tool_calls.len();
+                                    forwarded_tool_call_delta_count += tool_calls.len();
+                                    emit_log(
+                                        &app_handle,
+                                        "info",
+                                        format!(
+                                            "Codex Gateway SSE 收到完整 message 工具调用: response_id={} raw_event={} parsed_chunk={} delta_count={} total_delta_count={} elapsed_ms={}",
+                                            response_id,
+                                            raw_event_count,
+                                            parsed_chunk_count,
+                                            tool_calls.len(),
+                                            forwarded_tool_call_delta_count,
+                                            stream_started_at.elapsed().as_millis()
+                                        ),
+                                    );
                                     apply_tool_call_deltas(&mut stream_state.tool_calls, tool_calls, &response_id);
                                 }
                             }
                         }
                     }
+
+                    emit_log(
+                        &app_handle,
+                        "info",
+                        format!(
+                            "Codex Gateway SSE 已处理 chunk: response_id={} raw_event={} parsed_chunk={} usage_present={} delta_chars={} message_chars={} tool_call_deltas={} finish_reasons={} elapsed_ms={}",
+                            response_id,
+                            raw_event_count,
+                            parsed_chunk_count,
+                            usage_present,
+                            chunk_delta_chars,
+                            chunk_message_chars,
+                            chunk_tool_call_deltas,
+                            if chunk_finish_reasons.is_empty() {
+                                "none".to_string()
+                            } else {
+                                chunk_finish_reasons.join("|")
+                            },
+                            stream_started_at.elapsed().as_millis()
+                        ),
+                    );
                 }
                 Err(error) => {
-                    emit_log(&app_handle, "error", format!("Codex Gateway SSE 读取失败: {}", error));
-                    yield Ok(json_event(
-                        "response.failed",
-                        json!({
-                            "type": "response.failed",
-                            "response": {
-                                "id": response_id,
-                                "status": "failed",
-                                "error": { "message": error.to_string() }
-                            }
-                        }),
+                    consecutive_errors += 1;
+                    emit_log(&app_handle, "warn", format!(
+                        "Codex Gateway SSE 读取错误 ({}/{}): response_id={} raw_events={} parsed_chunks={} elapsed_ms={} error={}",
+                        consecutive_errors,
+                        max_consecutive_errors,
+                        response_id,
+                        raw_event_count,
+                        parsed_chunk_count,
+                        stream_started_at.elapsed().as_millis(),
+                        error
                     ));
-                    return;
+                    if consecutive_errors >= max_consecutive_errors {
+                        emit_log(&app_handle, "error", format!(
+                            "Codex Gateway 连续 {} 次读取失败，中断流: response_id={} raw_events={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} elapsed_ms={}",
+                            max_consecutive_errors,
+                            response_id,
+                            raw_event_count,
+                            parsed_chunk_count,
+                            forwarded_text_event_count,
+                            forwarded_text_chars,
+                            forwarded_tool_call_delta_count,
+                            stream_started_at.elapsed().as_millis()
+                        ));
+                        emit_log(
+                            &app_handle,
+                            "error",
+                            format!(
+                                "Codex Gateway SSE 向下游发送 response.failed: response_id={} reason=连续 {} 次 SSE 读取失败 elapsed_ms={}",
+                                response_id,
+                                max_consecutive_errors,
+                                stream_started_at.elapsed().as_millis()
+                            ),
+                        );
+                        yield Ok(json_event(
+                            "response.failed",
+                            response_failed_event(&response_id, format!("连续 {} 次 SSE 读取失败: {}", max_consecutive_errors, error)),
+                        ));
+                        return;
+                    }
+                    continue;
                 }
             }
         }
 
+        if !received_done_event && !saw_terminal_finish_reason && stream_state.message_text.is_empty() && stream_state.tool_calls.is_empty() {
+            let error_message = "上游 SSE 在返回任何内容前中断";
+            emit_log(
+                &app_handle,
+                "error",
+                format!(
+                    "Codex Gateway {}: response_id={} raw_events={} parsed_chunks={} elapsed_ms={}",
+                    error_message,
+                    response_id,
+                    raw_event_count,
+                    parsed_chunk_count,
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
+            emit_log(
+                &app_handle,
+                "error",
+                format!(
+                    "Codex Gateway SSE 向下游发送 response.failed: response_id={} reason={} elapsed_ms={}",
+                    response_id,
+                    error_message,
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
+            yield Ok(json_event(
+                "response.failed",
+                response_failed_event(&response_id, error_message),
+            ));
+            return;
+        }
+
+        if !received_done_event && !saw_terminal_finish_reason {
+            emit_log(
+                &app_handle,
+                "warn",
+                format!(
+                    "Codex Gateway 上游 SSE 未返回完成标记，但已有内容，继续完成响应: response_id={} raw_events={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} elapsed_ms={}",
+                    response_id,
+                    raw_event_count,
+                    parsed_chunk_count,
+                    forwarded_text_event_count,
+                    forwarded_text_chars,
+                    forwarded_tool_call_delta_count,
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
+        }
+
+        let output_items = stream_output_items(&message_item_id, &stream_state);
+
         if stream_state.message_started {
+            emit_log(
+                &app_handle,
+                "info",
+                format!(
+                    "Codex Gateway SSE 向下游发送 response.output_item.done: response_id={} item_id={} text_chars={} elapsed_ms={}",
+                    response_id,
+                    message_item_id,
+                    stream_state.message_text.chars().count(),
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
             yield Ok(json_event(
                 "response.output_item.done",
                 assistant_message_done_event(&message_item_id, &stream_state.message_text),
@@ -510,26 +982,52 @@ async fn post_responses(
         }
 
         for tool_call in stream_state.tool_calls.into_values() {
+            emit_log(
+                &app_handle,
+                "info",
+                format!(
+                    "Codex Gateway SSE 向下游发送 function_call done: response_id={} call_id={} name={} argument_chars={} elapsed_ms={}",
+                    response_id,
+                    tool_call.call_id,
+                    tool_call.name,
+                    tool_call.arguments.chars().count(),
+                    stream_started_at.elapsed().as_millis()
+                ),
+            );
             yield Ok(json_event(
                 "response.output_item.done",
                 function_call_done_event(&tool_call),
             ));
         }
 
+        emit_log(
+            &app_handle,
+            "info",
+            format!(
+                "Codex Gateway SSE 向下游发送 response.completed: response_id={} raw_events={} parsed_chunks={} forwarded_text_events={} forwarded_text_chars={} tool_call_deltas={} done_event={} terminal_finish_reason={} elapsed_ms={}",
+                response_id,
+                raw_event_count,
+                parsed_chunk_count,
+                forwarded_text_event_count,
+                forwarded_text_chars,
+                forwarded_tool_call_delta_count,
+                received_done_event,
+                saw_terminal_finish_reason,
+                stream_started_at.elapsed().as_millis()
+            ),
+        );
         yield Ok(json_event(
             "response.completed",
-            json!({
-                "type": "response.completed",
-                "response": {
-                    "id": response_id,
-                    "usage": usage_totals.as_json(),
-                }
-            }),
+            response_completed_event(&response_id, &target_model_name, output_items, &usage_totals),
         ));
     };
 
     Sse::new(event_stream)
-        .keep_alive(KeepAlive::default())
+        .keep_alive(
+            KeepAlive::new()
+                .interval(std::time::Duration::from_secs(3))
+                .text("ping"),
+        )
         .into_response()
 }
 
@@ -924,6 +1422,25 @@ fn build_chat_completions_url(base_url: &str) -> Result<String, String> {
         .map_err(|error| format!("构建 Chat Completions 地址失败: {}", error))
 }
 
+fn build_upstream_request(
+    client: &reqwest::Client,
+    route: &RouteState,
+    upstream_url: &str,
+    chat_request: &Value,
+    stream_requested: bool,
+) -> reqwest::RequestBuilder {
+    let mut request_builder = client
+        .post(upstream_url.to_string())
+        .bearer_auth(route.api_key.clone())
+        .header(reqwest::header::CONTENT_TYPE, "application/json");
+
+    if stream_requested {
+        request_builder = request_builder.header(reqwest::header::ACCEPT, "text/event-stream");
+    }
+
+    request_builder.json(chat_request)
+}
+
 fn copy_value(source: &Value, target: &mut serde_json::Map<String, Value>, key: &str) {
     if let Some(value) = source.get(key) {
         target.insert(key.to_string(), value.clone());
@@ -1014,46 +1531,111 @@ fn apply_tool_call_deltas(
     }
 }
 
+fn assistant_message_item(message_id: &str, text: &str) -> Value {
+    json!({
+        "type": "message",
+        "role": "assistant",
+        "id": message_id,
+        "content": [{
+            "type": "output_text",
+            "text": text,
+        }],
+    })
+}
+
 fn assistant_message_added_event(message_id: &str, text: &str) -> Value {
     json!({
         "type": "response.output_item.added",
-        "item": {
-            "type": "message",
-            "role": "assistant",
-            "id": message_id,
-            "content": [{
-                "type": "output_text",
-                "text": text,
-            }],
-        }
+        "item": assistant_message_item(message_id, text)
     })
 }
 
 fn assistant_message_done_event(message_id: &str, text: &str) -> Value {
     json!({
         "type": "response.output_item.done",
-        "item": {
-            "type": "message",
-            "role": "assistant",
-            "id": message_id,
-            "content": [{
-                "type": "output_text",
-                "text": text,
-            }],
-        }
+        "item": assistant_message_item(message_id, text)
+    })
+}
+
+fn function_call_item(tool_call: &ToolCallState) -> Value {
+    json!({
+        "type": "function_call",
+        "call_id": tool_call.call_id,
+        "name": tool_call.name,
+        "arguments": tool_call.arguments,
     })
 }
 
 fn function_call_done_event(tool_call: &ToolCallState) -> Value {
     json!({
         "type": "response.output_item.done",
-        "item": {
-            "type": "function_call",
-            "call_id": tool_call.call_id,
-            "name": tool_call.name,
-            "arguments": tool_call.arguments,
+        "item": function_call_item(tool_call)
+    })
+}
+
+fn response_failed_event(response_id: &str, message: impl Into<String>) -> Value {
+    json!({
+        "type": "response.failed",
+        "response": {
+            "id": response_id,
+            "status": "failed",
+            "error": { "message": message.into() }
         }
     })
+}
+
+fn stream_output_items(message_id: &str, stream_state: &StreamState) -> Vec<Value> {
+    let mut output_items = Vec::new();
+
+    if stream_state.message_started {
+        output_items.push(assistant_message_item(message_id, &stream_state.message_text));
+    }
+
+    for tool_call in stream_state.tool_calls.values() {
+        output_items.push(function_call_item(tool_call));
+    }
+
+    output_items
+}
+
+fn response_completed_event(
+    response_id: &str,
+    model: &str,
+    output_items: Vec<Value>,
+    usage_totals: &UsageTotals,
+) -> Value {
+    json!({
+        "type": "response.completed",
+        "response": {
+            "id": response_id,
+            "object": "response",
+            "created_at": chrono::Utc::now().timestamp(),
+            "status": "completed",
+            "model": model,
+            "output": output_items,
+            "usage": usage_totals.as_json(),
+        }
+    })
+}
+
+fn choice_has_terminal_finish_reason(choice: &Value) -> bool {
+    choice_finish_reason(choice).is_some()
+}
+
+fn choice_finish_reason<'a>(choice: &'a Value) -> Option<&'a str> {
+    choice
+        .get("finish_reason")
+        .and_then(Value::as_str)
+        .filter(|finish_reason| !finish_reason.is_empty())
+}
+
+fn preview_text_for_log(text: &str, max_chars: usize) -> String {
+    let normalized = text.replace(['\n', '\r', '\t'], " ");
+    let mut preview = normalized.chars().take(max_chars).collect::<String>();
+    if normalized.chars().count() > max_chars {
+        preview.push_str("...");
+    }
+    preview
 }
 
 fn json_event(kind: &str, payload: Value) -> Event {
@@ -1069,19 +1651,26 @@ impl UsageTotals {
     }
 
     fn from_value(usage: Option<&Value>) -> Self {
+        let input_tokens = usage
+            .and_then(|value| usage_value(value, &["input_tokens", "prompt_tokens"]))
+            .unwrap_or(0);
+        let output_tokens = usage
+            .and_then(|value| usage_value(value, &["output_tokens", "completion_tokens"]))
+            .unwrap_or(0);
+        let total_tokens = usage
+            .and_then(|value| usage_value(value, &["total_tokens"]))
+            .unwrap_or_else(|| {
+                if input_tokens > 0 || output_tokens > 0 {
+                    input_tokens + output_tokens
+                } else {
+                    0
+                }
+            });
+
         Self {
-            input_tokens: usage
-                .and_then(|value| value.get("input_tokens"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0),
-            output_tokens: usage
-                .and_then(|value| value.get("output_tokens"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0),
-            total_tokens: usage
-                .and_then(|value| value.get("total_tokens"))
-                .and_then(Value::as_i64)
-                .unwrap_or(0),
+            input_tokens,
+            output_tokens,
+            total_tokens,
         }
     }
 
@@ -1094,6 +1683,11 @@ impl UsageTotals {
             "total_tokens": self.total_tokens,
         })
     }
+}
+
+fn usage_value(usage: &Value, keys: &[&str]) -> Option<i64> {
+    keys.iter()
+        .find_map(|key| usage.get(*key).and_then(Value::as_i64))
 }
 
 #[cfg(test)]
@@ -1218,5 +1812,73 @@ mod tests {
         assert_eq!(tool_call.call_id, "call-1");
         assert_eq!(tool_call.name, "search");
         assert_eq!(tool_call.arguments, "{\"q\":\"hello\"}");
+    }
+
+    #[test]
+    fn terminal_finish_reason_detection_matches_stream_completion_semantics() {
+        assert!(choice_has_terminal_finish_reason(&json!({
+            "finish_reason": "stop"
+        })));
+        assert!(choice_has_terminal_finish_reason(&json!({
+            "finish_reason": "tool_calls"
+        })));
+        assert!(!choice_has_terminal_finish_reason(&json!({
+            "finish_reason": null
+        })));
+        assert!(!choice_has_terminal_finish_reason(&json!({})));
+    }
+
+    #[test]
+    fn stream_completed_event_contains_terminal_response_shape() {
+        let mut stream_state = StreamState {
+            message_text: "done".to_string(),
+            message_started: true,
+            tool_calls: BTreeMap::new(),
+        };
+        stream_state.tool_calls.insert(
+            0,
+            ToolCallState {
+                call_id: "call-1".to_string(),
+                name: "search".to_string(),
+                arguments: "{\"q\":\"hello\"}".to_string(),
+            },
+        );
+
+        let usage = UsageTotals {
+            input_tokens: 11,
+            output_tokens: 7,
+            total_tokens: 18,
+        };
+        let event = response_completed_event(
+            "resp-1",
+            "mimo-v2-pro",
+            stream_output_items("msg-1", &stream_state),
+            &usage,
+        );
+        let response = &event["response"];
+        let output = response["output"].as_array().unwrap();
+
+        assert_eq!(event["type"].as_str(), Some("response.completed"));
+        assert_eq!(response["id"].as_str(), Some("resp-1"));
+        assert_eq!(response["object"].as_str(), Some("response"));
+        assert_eq!(response["status"].as_str(), Some("completed"));
+        assert_eq!(response["model"].as_str(), Some("mimo-v2-pro"));
+        assert_eq!(output.len(), 2);
+        assert_eq!(output[0]["type"].as_str(), Some("message"));
+        assert_eq!(output[0]["id"].as_str(), Some("msg-1"));
+        assert_eq!(output[1]["type"].as_str(), Some("function_call"));
+        assert_eq!(response["usage"]["total_tokens"].as_i64(), Some(18));
+    }
+
+    #[test]
+    fn usage_totals_support_prompt_and_completion_fallbacks() {
+        let usage = UsageTotals::from_value(Some(&json!({
+            "prompt_tokens": 13,
+            "completion_tokens": 5,
+        })));
+
+        assert_eq!(usage.input_tokens, 13);
+        assert_eq!(usage.output_tokens, 5);
+        assert_eq!(usage.total_tokens, 18);
     }
 }

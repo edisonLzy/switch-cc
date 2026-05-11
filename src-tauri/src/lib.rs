@@ -396,6 +396,7 @@ pub fn run() {
             commands::set_api_gateway_enabled,
             commands::get_codex_gateway_status,
             commands::set_codex_gateway_enabled,
+            commands::set_codex_gateway_disk_logging_enabled,
             commands::install_codex_gateway_provider,
             update_tray_menu,
         ]);

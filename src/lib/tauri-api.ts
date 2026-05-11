@@ -172,6 +172,12 @@ export class TauriAPI {
     return await invoke("set_codex_gateway_enabled", { enabled });
   }
 
+  async setCodexGatewayDiskLoggingEnabled(
+    enabled: boolean,
+  ): Promise<CodexGatewayStatus> {
+    return await invoke("set_codex_gateway_disk_logging_enabled", { enabled });
+  }
+
   // 将本地 Codex Gateway 写入 ~/.codex/config.toml
   async installCodexGatewayProvider(): Promise<CodexGatewayStatus> {
     return await invoke("install_codex_gateway_provider");

@@ -35,6 +35,8 @@ pub struct CodexGatewayConfig {
     pub port: u16,
     #[serde(default)]
     pub target_provider_id: Option<String>,
+    #[serde(default)]
+    pub disk_logging_enabled: bool,
 }
 
 impl Default for CodexGatewayConfig {
@@ -43,6 +45,7 @@ impl Default for CodexGatewayConfig {
             enabled: false,
             port: 7373,
             target_provider_id: None,
+            disk_logging_enabled: false,
         }
     }
 }

@@ -97,6 +97,8 @@ fn build_codex_gateway_status_payload(
         "port": config.codex_gateway.port,
         "localBaseUrl": codex_gateway::gateway_base_url(config.codex_gateway.port),
         "healthUrl": codex_gateway::health_url(config.codex_gateway.port),
+        "diskLoggingEnabled": config.codex_gateway.disk_logging_enabled,
+        "logDirectory": codex_gateway::log_directory()?.to_string_lossy(),
         "targetProviderId": target_provider_id,
         "targetProviderName": target_provider_name,
         "targetBaseUrl": target_base_url,
@@ -684,6 +686,23 @@ pub async fn set_codex_gateway_enabled(
         if enabled {
             config.codex_gateway.target_provider_id = Some(provider.id.clone());
         }
+    }
+
+    state.save()?;
+    get_codex_gateway_status(state).await
+}
+
+#[tauri::command]
+pub async fn set_codex_gateway_disk_logging_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        config.codex_gateway.disk_logging_enabled = enabled;
     }
 
     state.save()?;
