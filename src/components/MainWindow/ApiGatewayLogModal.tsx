@@ -46,7 +46,7 @@ function ApiGatewayLogModal({
   diskLoggingDescription,
 }: ApiGatewayLogModalProps) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [isDetailsExpanded, setIsDetailsExpanded] = useState(true);
+  const [isDetailsExpanded, setIsDetailsExpanded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const detailLines = localBaseUrl ? [`本地地址 ${localBaseUrl}`, ...details] : ["实时日志流", ...details];
   const diskLoggingToggleId = "gateway-disk-logging";
