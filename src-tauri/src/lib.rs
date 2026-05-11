@@ -1,4 +1,6 @@
 mod api_gateway;
+mod codex_config;
+mod codex_gateway;
 mod commands;
 mod config;
 mod menubar;
@@ -257,6 +259,55 @@ pub fn run() {
                                 log::error!("同步当前供应商 Claude 配置失败: {}", error);
                             }
                         }
+
+                        let (codex_gateway_config, current_codex_provider, codex_gateway_provider) = {
+                            let config = match app_state.config.lock() {
+                                Ok(config) => config,
+                                Err(error) => {
+                                    log::error!("读取 Codex Gateway 启动配置失败: {}", error);
+                                    return;
+                                }
+                            };
+                            let current_codex_provider = config
+                                .codex_providers
+                                .get(&config.current_codex)
+                                .cloned();
+                            let codex_gateway_provider = config
+                                .codex_gateway
+                                .target_provider_id
+                                .as_ref()
+                                .and_then(|provider_id| config.codex_providers.get(provider_id))
+                                .cloned()
+                                .or_else(|| current_codex_provider.clone());
+                            (
+                                config.codex_gateway.clone(),
+                                current_codex_provider,
+                                codex_gateway_provider,
+                            )
+                        };
+
+                        if codex_gateway_config.enabled {
+                            if let Some(provider) = codex_gateway_provider {
+                                if let Err(error) = codex_gateway::start_or_update(
+                                    app_state.inner(),
+                                    &provider,
+                                    codex_gateway_config.port,
+                                )
+                                .await
+                                {
+                                    log::error!("启动 Codex Gateway 失败: {}", error);
+                                }
+                            }
+                        }
+
+                        if let Some(provider) = current_codex_provider {
+                            if let Err(error) = codex_config::sync_local_gateway_provider(
+                                &provider,
+                                codex_gateway_config.port,
+                            ) {
+                                log::error!("同步 Codex Gateway 配置失败: {}", error);
+                            }
+                        }
                     }
                 });
             }
@@ -316,10 +367,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
             commands::get_current_provider,
+            commands::get_current_codex_provider,
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,
             commands::switch_provider,
+            commands::switch_codex_provider,
             commands::import_current_config_as_default,
             commands::get_claude_config_status,
             commands::get_claude_config,
@@ -341,6 +394,9 @@ pub fn run() {
             commands::launch_claude_with_provider,
             commands::get_api_gateway_status,
             commands::set_api_gateway_enabled,
+            commands::get_codex_gateway_status,
+            commands::set_codex_gateway_enabled,
+            commands::install_codex_gateway_provider,
             update_tray_menu,
         ]);
 

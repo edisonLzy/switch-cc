@@ -1,9 +1,10 @@
-import { Provider } from "../types";
+import { ClaudeProvider } from "../types";
 
 // 预设供应商配置
-export const presetProviders: Omit<Provider, "id" | "createdAt">[] = [
+export const presetProviders: Omit<ClaudeProvider, "id" | "createdAt">[] = [
   {
     name: "智谱清言",
+    providerType: "claude",
     settingsConfig: {
       env: {
         ANTHROPIC_AUTH_TOKEN: "your-api-key",
@@ -14,6 +15,7 @@ export const presetProviders: Omit<Provider, "id" | "createdAt">[] = [
   },
   {
     name: "AnyRouter",
+    providerType: "claude",
     settingsConfig: {
       env: {
         ANTHROPIC_AUTH_TOKEN: "your-anyrouter-api-key",
@@ -24,6 +26,7 @@ export const presetProviders: Omit<Provider, "id" | "createdAt">[] = [
   },
   {
     name: "PackyCode",
+    providerType: "claude",
     settingsConfig: {
       env: {
         ANTHROPIC_AUTH_TOKEN: "your-packycode-api-key",

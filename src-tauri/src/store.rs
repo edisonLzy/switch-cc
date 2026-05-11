@@ -1,4 +1,5 @@
 use crate::config;
+use crate::provider::CodexProvider;
 use crate::provider::Provider;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -28,22 +29,49 @@ impl Default for ApiGatewayConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodexGatewayConfig {
+    pub enabled: bool,
+    pub port: u16,
+    #[serde(default)]
+    pub target_provider_id: Option<String>,
+}
+
+impl Default for CodexGatewayConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 7373,
+            target_provider_id: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub providers: HashMap<String, Provider>,
+    #[serde(default)]
+    pub codex_providers: HashMap<String, CodexProvider>,
     pub current: String,
+    #[serde(default)]
+    pub current_codex: String,
     pub app_mode: AppMode,
     #[serde(default)]
     pub api_gateway: ApiGatewayConfig,
+    #[serde(default)]
+    pub codex_gateway: CodexGatewayConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             providers: HashMap::new(),
+            codex_providers: HashMap::new(),
             current: String::new(),
+            current_codex: String::new(),
             app_mode: AppMode::Main,
             api_gateway: ApiGatewayConfig::default(),
+            codex_gateway: CodexGatewayConfig::default(),
         }
     }
 }
@@ -67,12 +95,21 @@ impl AppConfig {
             self.providers
                 .insert("official".to_string(), official_provider);
         }
+
+        if self.current.is_empty() {
+            self.current = self.providers.keys().next().cloned().unwrap_or_default();
+        }
+
+        if self.current_codex.is_empty() {
+            self.current_codex = self.codex_providers.keys().next().cloned().unwrap_or_default();
+        }
     }
 }
 
 pub struct AppState {
     pub config: Mutex<AppConfig>,
     pub api_gateway_runtime: Mutex<crate::api_gateway::ApiGatewayRuntime>,
+    pub codex_gateway_runtime: Mutex<crate::codex_gateway::CodexGatewayRuntime>,
     app_handle: OnceLock<tauri::AppHandle>,
 }
 
@@ -82,6 +119,7 @@ impl AppState {
         Self {
             config: Mutex::new(config),
             api_gateway_runtime: Mutex::new(crate::api_gateway::ApiGatewayRuntime::default()),
+            codex_gateway_runtime: Mutex::new(crate::codex_gateway::CodexGatewayRuntime::default()),
             app_handle: OnceLock::new(),
         }
     }

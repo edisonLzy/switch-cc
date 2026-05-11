@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { ApiGatewayLogEntry, ApiGatewayStatus, Provider } from "../../types";
+import {
+  ApiGatewayLogEntry,
+  ApiGatewayStatus,
+  CodexGatewayStatus,
+  Provider,
+  getProviderType,
+  isClaudeProvider,
+} from "../../types";
 import ProviderList from "./ProviderList";
 import AddProviderModal from "./AddProviderModal";
 import EditProviderModal from "./EditProviderModal";
@@ -9,7 +16,7 @@ import ClaudeConfigModal from "./ClaudeConfigModal";
 import ConfigSyncModal from "./ConfigSyncModal";
 import ApiGatewayLogModal from "./ApiGatewayLogModal";
 import { UpdateBadge } from "./UpdateBadge";
-import { Plus, Settings, Moon, Sun, Eye, Cloud, Waypoints } from "lucide-react";
+import { Plus, Settings, Moon, Sun, Eye, Cloud, Waypoints, Bot } from "lucide-react";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { useDarkMode } from "../../hooks/useDarkMode";
@@ -20,6 +27,7 @@ function MainWindow() {
   const { isDarkMode, toggleDarkMode } = useDarkMode();
   const [providers, setProviders] = useState<Record<string, Provider>>({});
   const [currentProviderId, setCurrentProviderId] = useState<string>("");
+  const [currentCodexProviderId, setCurrentCodexProviderId] = useState<string>("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProviderId, setEditingProviderId] = useState<string | null>(
     null,
@@ -39,9 +47,13 @@ function MainWindow() {
   const [isClaudeConfigOpen, setIsClaudeConfigOpen] = useState(false);
   const [showSyncModal, setShowSyncModal] = useState(false);
   const [isApiGatewayLogOpen, setIsApiGatewayLogOpen] = useState(false);
+  const [isCodexGatewayLogOpen, setIsCodexGatewayLogOpen] = useState(false);
   const [apiGatewayStatus, setApiGatewayStatus] = useState<ApiGatewayStatus | null>(null);
+  const [codexGatewayStatus, setCodexGatewayStatus] = useState<CodexGatewayStatus | null>(null);
   const [apiGatewayLogs, setApiGatewayLogs] = useState<ApiGatewayLogEntry[]>([]);
+  const [codexGatewayLogs, setCodexGatewayLogs] = useState<ApiGatewayLogEntry[]>([]);
   const [isApiGatewayPending, setIsApiGatewayPending] = useState(false);
+  const [isCodexGatewayPending, setIsCodexGatewayPending] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 设置通知的辅助函数
@@ -100,6 +112,31 @@ function MainWindow() {
     };
   }, []);
 
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    const setupLogListener = async () => {
+      try {
+        unlisten = await api.onCodexGatewayLog((entry) => {
+          setCodexGatewayLogs((currentLogs) => {
+            const nextLogs = [...currentLogs, entry];
+            return nextLogs.slice(-100);
+          });
+        });
+      } catch (error) {
+        console.error("设置 Codex Gateway 日志监听失败:", error);
+      }
+    };
+
+    setupLogListener();
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
   // 清理定时器
   useEffect(() => {
     return () => {
@@ -138,14 +175,24 @@ function MainWindow() {
 
   const loadProviders = async () => {
     try {
-      const [loadedProviders, currentId, gatewayStatus] = await Promise.all([
+      const [
+        loadedProviders,
+        currentId,
+        currentCodexId,
+        gatewayStatus,
+        loadedCodexGatewayStatus,
+      ] = await Promise.all([
         api.getProviders(),
         api.getCurrentProvider(),
+        api.getCurrentCodexProvider(),
         api.getApiGatewayStatus(),
+        api.getCodexGatewayStatus(),
       ]);
       setProviders(loadedProviders);
       setCurrentProviderId(currentId);
+      setCurrentCodexProviderId(currentCodexId);
       setApiGatewayStatus(gatewayStatus);
+      setCodexGatewayStatus(loadedCodexGatewayStatus);
 
       // 如果供应商列表为空，尝试自动从 live 导入一条默认供应商
       if (Object.keys(loadedProviders).length === 0) {
@@ -164,11 +211,32 @@ function MainWindow() {
 
   const handleAddProvider = async (provider: Omit<Provider, "id">) => {
     try {
-      const newProvider: Provider = {
-        ...provider,
-        id: generateId(),
-        createdAt: Date.now(),
-      };
+      let newProvider: Provider;
+
+      if ("codexConfig" in provider && provider.codexConfig) {
+        newProvider = {
+          id: generateId(),
+          name: provider.name,
+          websiteUrl: provider.websiteUrl,
+          category: provider.category,
+          createdAt: Date.now(),
+          providerType: "codex",
+          codexConfig: provider.codexConfig,
+        };
+      } else if ("settingsConfig" in provider && provider.settingsConfig) {
+        newProvider = {
+          id: generateId(),
+          name: provider.name,
+          websiteUrl: provider.websiteUrl,
+          category: provider.category,
+          createdAt: Date.now(),
+          providerType: "claude",
+          settingsConfig: provider.settingsConfig,
+        };
+      } else {
+        throw new Error("供应商配置无效");
+      }
+
       await api.addProvider(newProvider);
       await loadProviders();
       setIsAddModalOpen(false);
@@ -213,7 +281,6 @@ function MainWindow() {
           await loadProviders();
           setConfirmDialog(null);
           showNotification("供应商删除成功", "success");
-          // 更新托盘菜单
           await api.updateTrayMenu();
         } catch (error) {
           console.error("删除供应商失败:", error);
@@ -224,11 +291,30 @@ function MainWindow() {
     });
   };
 
-  const handleSwitchProvider = async (id: string) => {
+  const handleSwitchProvider = async (provider: Provider) => {
     try {
-      const success = await api.switchProvider(id);
+      if (getProviderType(provider) === "codex") {
+        const success = await api.switchCodexProvider(provider.id);
+        if (success) {
+          setCurrentCodexProviderId(provider.id);
+          const gatewayStatus = await api.getCodexGatewayStatus();
+          setCodexGatewayStatus(gatewayStatus);
+          showNotification(
+            gatewayStatus.installedInCodexConfig
+              ? "切换成功！Codex 供应商和本地 gateway 配置已同步"
+              : "切换成功！Codex 供应商已更新，可在 Codex Gateway 弹窗中添加本地 gateway",
+            "success",
+            2500,
+          );
+        } else {
+          showNotification("切换失败，请检查配置", "error");
+        }
+        return;
+      }
+
+      const success = await api.switchProvider(provider.id);
       if (success) {
-        setCurrentProviderId(id);
+        setCurrentProviderId(provider.id);
         const gatewayStatus = await api.getApiGatewayStatus();
         setApiGatewayStatus(gatewayStatus);
         showNotification(
@@ -236,7 +322,6 @@ function MainWindow() {
           "success",
           2000,
         );
-        // 更新托盘菜单
         await api.updateTrayMenu();
       } else {
         showNotification("切换失败，请检查配置", "error");
@@ -266,6 +351,43 @@ function MainWindow() {
       showNotification(`API Gateway 操作失败：${errorMessage}`, "error");
     } finally {
       setIsApiGatewayPending(false);
+    }
+  };
+
+  const handleToggleCodexGateway = async (checked: boolean) => {
+    try {
+      setIsCodexGatewayPending(true);
+      const status = await api.setCodexGatewayEnabled(checked);
+      setCodexGatewayStatus(status);
+      showNotification(
+        checked
+          ? `Codex Gateway 已启动，目标供应商 ${status.targetProviderName ?? "当前供应商"}，本地地址 ${status.localBaseUrl}`
+          : "Codex Gateway 已关闭；已写入的 Codex 本地 provider 配置会保留",
+        "success",
+        2500,
+      );
+    } catch (error) {
+      console.error("切换 Codex Gateway 失败:", error);
+      const errorMessage = extractErrorMessage(error);
+      showNotification(`Codex Gateway 操作失败：${errorMessage}`, "error");
+    } finally {
+      setIsCodexGatewayPending(false);
+    }
+  };
+
+  const handleInstallCodexGateway = async () => {
+    try {
+      const status = await api.installCodexGatewayProvider();
+      setCodexGatewayStatus(status);
+      showNotification(
+        `已将本地 gateway 写入 ${status.codexConfigPath}`,
+        "success",
+        2500,
+      );
+    } catch (error) {
+      console.error("写入 Codex Gateway 配置失败:", error);
+      const errorMessage = extractErrorMessage(error);
+      showNotification(`写入 Codex 配置失败：${errorMessage}`, "error");
     }
   };
 
@@ -319,6 +441,11 @@ function MainWindow() {
       showNotification(`同步失败：${errorMessage}`, "error");
     }
   };
+
+  const claudeProviderCount = Object.values(providers).filter(isClaudeProvider).length;
+  const codexProviderCount = Object.values(providers).filter(
+    (provider) => getProviderType(provider) === "codex",
+  ).length;
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -385,10 +512,40 @@ function MainWindow() {
               </div>
               <Checkbox
                 checked={apiGatewayStatus?.enabled ?? false}
-                disabled={isApiGatewayPending || Object.keys(providers).length === 0}
+                disabled={isApiGatewayPending || claudeProviderCount === 0}
                 onClick={(event) => event.stopPropagation()}
                 onCheckedChange={(checked) => handleToggleApiGateway(checked === true)}
                 aria-label="启用 API Gateway"
+                className="shrink-0 border-gray-600 bg-white"
+              />
+            </div>
+            <div
+              className={`relative z-0 flex min-w-0 cursor-pointer items-center gap-2 rounded-base border-2 px-3 py-2 text-slate-900 shadow-shadow transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 ${
+                codexGatewayStatus?.enabled
+                  ? "gateway-rainbow-border border-emerald-500 bg-emerald-100 hover:bg-emerald-200"
+                  : "border-border bg-emerald-100 hover:bg-emerald-200"
+              }`}
+              onClick={() => setIsCodexGatewayLogOpen(true)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setIsCodexGatewayLogOpen(true);
+                }
+              }}
+              aria-label="查看 Codex Gateway 日志"
+            >
+              <div className="flex shrink-0 items-center gap-2">
+                <Bot size={15} />
+                <span className="text-sm font-medium">Codex Gateway</span>
+              </div>
+              <Checkbox
+                checked={codexGatewayStatus?.enabled ?? false}
+                disabled={isCodexGatewayPending || codexProviderCount === 0}
+                onClick={(event) => event.stopPropagation()}
+                onCheckedChange={(checked) => handleToggleCodexGateway(checked === true)}
+                aria-label="启用 Codex Gateway"
                 className="shrink-0 border-gray-600 bg-white"
               />
             </div>
@@ -422,7 +579,8 @@ function MainWindow() {
 
             <ProviderList
               providers={providers}
-              currentProviderId={currentProviderId}
+              currentClaudeProviderId={currentProviderId}
+              currentCodexProviderId={currentCodexProviderId}
               onSwitch={handleSwitchProvider}
               onDelete={handleDeleteProvider}
               onEdit={setEditingProviderId}
@@ -472,8 +630,51 @@ function MainWindow() {
         <ApiGatewayLogModal
           isOpen={isApiGatewayLogOpen}
           onClose={() => setIsApiGatewayLogOpen(false)}
+          title="API Gateway 日志"
           localBaseUrl={apiGatewayStatus?.localBaseUrl}
+          details={
+            apiGatewayStatus?.targetProviderName
+              ? [
+                  `目标供应商 ${apiGatewayStatus.targetProviderName}`,
+                  apiGatewayStatus.targetBaseUrl
+                    ? `上游地址 ${apiGatewayStatus.targetBaseUrl}`
+                    : "",
+                ].filter(Boolean)
+              : []
+          }
           logs={apiGatewayLogs}
+        />
+      )}
+
+      {isCodexGatewayLogOpen && (
+        <ApiGatewayLogModal
+          isOpen={isCodexGatewayLogOpen}
+          onClose={() => setIsCodexGatewayLogOpen(false)}
+          title="Codex Gateway 日志"
+          localBaseUrl={codexGatewayStatus?.localBaseUrl}
+          details={[
+            codexGatewayStatus?.targetProviderName
+              ? `目标供应商 ${codexGatewayStatus.targetProviderName}`
+              : "",
+            codexGatewayStatus?.targetModelName
+              ? `目标模型 ${codexGatewayStatus.targetModelName}`
+              : "",
+            codexGatewayStatus?.targetBaseUrl
+              ? `上游地址 ${codexGatewayStatus.targetBaseUrl}`
+              : "",
+            codexGatewayStatus
+              ? `Codex 配置 ${codexGatewayStatus.codexConfigPath}`
+              : "",
+            codexGatewayStatus
+              ? codexGatewayStatus.installedInCodexConfig
+                ? `已安装本地 provider: ${codexGatewayStatus.providerKey}`
+                : "尚未写入本地 provider 配置"
+              : "",
+          ].filter(Boolean)}
+          logs={codexGatewayLogs}
+          actionLabel="Add Local Gateway"
+          onAction={handleInstallCodexGateway}
+          actionDisabled={codexProviderCount === 0}
         />
       )}
 

@@ -6,6 +6,7 @@ import {
   AppMode,
   ApiGatewayStatus,
   ApiGatewayLogEntry,
+  CodexGatewayStatus,
 } from "../types";
 
 export class TauriAPI {
@@ -17,6 +18,11 @@ export class TauriAPI {
   // 获取当前供应商ID
   async getCurrentProvider(): Promise<string> {
     return await invoke("get_current_provider");
+  }
+
+  // 获取当前 Codex 供应商ID
+  async getCurrentCodexProvider(): Promise<string> {
+    return await invoke("get_current_codex_provider");
   }
 
   // 添加供应商
@@ -37,6 +43,11 @@ export class TauriAPI {
   // 切换供应商
   async switchProvider(id: string): Promise<boolean> {
     return await invoke("switch_provider", { providerId: id });
+  }
+
+  // 切换 Codex 供应商
+  async switchCodexProvider(id: string): Promise<boolean> {
+    return await invoke("switch_codex_provider", { providerId: id });
   }
 
   // 导入当前配置作为默认供应商
@@ -151,6 +162,21 @@ export class TauriAPI {
     return await invoke("set_api_gateway_enabled", { enabled });
   }
 
+  // 获取 Codex Gateway 状态
+  async getCodexGatewayStatus(): Promise<CodexGatewayStatus> {
+    return await invoke("get_codex_gateway_status");
+  }
+
+  // 启用或禁用 Codex Gateway
+  async setCodexGatewayEnabled(enabled: boolean): Promise<CodexGatewayStatus> {
+    return await invoke("set_codex_gateway_enabled", { enabled });
+  }
+
+  // 将本地 Codex Gateway 写入 ~/.codex/config.toml
+  async installCodexGatewayProvider(): Promise<CodexGatewayStatus> {
+    return await invoke("install_codex_gateway_provider");
+  }
+
   // 监听供应商切换事件
   async onProviderSwitched(callback: (data: { providerId: string }) => void) {
     return await listen("provider-switched", (event) => {
@@ -167,6 +193,12 @@ export class TauriAPI {
 
   async onApiGatewayLog(callback: (entry: ApiGatewayLogEntry) => void) {
     return await listen("api-gateway-log", (event) => {
+      callback(event.payload as ApiGatewayLogEntry);
+    });
+  }
+
+  async onCodexGatewayLog(callback: (entry: ApiGatewayLogEntry) => void) {
+    return await listen("codex-gateway-log", (event) => {
       callback(event.payload as ApiGatewayLogEntry);
     });
   }

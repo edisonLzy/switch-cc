@@ -1,6 +1,8 @@
 use crate::api_gateway;
 use crate::config;
-use crate::provider::Provider;
+use crate::codex_config;
+use crate::codex_gateway;
+use crate::provider::{CodexProvider, Provider, ProviderPayload, ProviderType};
 use crate::settings::Settings;
 use crate::store::{AppConfig, AppMode, AppState};
 use std::collections::HashMap;
@@ -19,6 +21,90 @@ fn configured_gateway_provider(config: &AppConfig) -> Option<Provider> {
         .as_ref()
         .and_then(|provider_id| config.providers.get(provider_id))
         .cloned()
+}
+
+fn configured_codex_gateway_provider(config: &AppConfig) -> Option<CodexProvider> {
+    config
+        .codex_gateway
+        .target_provider_id
+        .as_ref()
+        .and_then(|provider_id| config.codex_providers.get(provider_id))
+        .cloned()
+}
+
+fn collect_provider_payloads(config: &AppConfig) -> HashMap<String, ProviderPayload> {
+    let mut providers = HashMap::new();
+
+    for provider in config.providers.values() {
+        providers.insert(
+            provider.id.clone(),
+            ProviderPayload::from_claude_provider(provider.clone()),
+        );
+    }
+
+    for provider in config.codex_providers.values() {
+        providers.insert(
+            provider.id.clone(),
+            ProviderPayload::from_codex_provider(provider.clone()),
+        );
+    }
+
+    providers
+}
+
+fn selected_codex_provider(config: &AppConfig) -> Option<CodexProvider> {
+    config
+        .codex_providers
+        .get(&config.current_codex)
+        .cloned()
+        .or_else(|| configured_codex_gateway_provider(config))
+}
+
+fn build_codex_gateway_status_payload(
+    config: &AppConfig,
+    running: bool,
+    active_route: Option<codex_gateway::GatewayRouteSnapshot>,
+) -> Result<serde_json::Value, String> {
+    let configured_provider = configured_codex_gateway_provider(config);
+    let target_provider_id = active_route
+        .as_ref()
+        .map(|route| route.provider_id.clone())
+        .or_else(|| configured_provider.as_ref().map(|provider| provider.id.clone()));
+    let target_provider_name = active_route
+        .as_ref()
+        .map(|route| route.provider_name.clone())
+        .or_else(|| configured_provider.as_ref().map(|provider| provider.name.clone()));
+    let target_base_url = active_route
+        .as_ref()
+        .map(|route| route.target_base_url.clone())
+        .or_else(|| {
+            configured_provider
+                .as_ref()
+                .map(|provider| provider.codex_config.upstream_url.trim().to_string())
+        });
+    let target_model_name = active_route
+        .as_ref()
+        .map(|route| route.target_model_name.clone())
+        .or_else(|| {
+            configured_provider
+                .as_ref()
+                .map(|provider| provider.codex_config.model_name.clone())
+        });
+
+    Ok(serde_json::json!({
+        "enabled": config.codex_gateway.enabled,
+        "running": running,
+        "port": config.codex_gateway.port,
+        "localBaseUrl": codex_gateway::gateway_base_url(config.codex_gateway.port),
+        "healthUrl": codex_gateway::health_url(config.codex_gateway.port),
+        "targetProviderId": target_provider_id,
+        "targetProviderName": target_provider_name,
+        "targetBaseUrl": target_base_url,
+        "targetModelName": target_model_name,
+        "codexConfigPath": codex_config::get_codex_config_path()?.to_string_lossy(),
+        "installedInCodexConfig": codex_config::has_local_gateway_provider()?,
+        "providerKey": codex_config::LOCAL_GATEWAY_PROVIDER_KEY,
+    }))
 }
 
 fn build_gateway_status_payload(
@@ -57,12 +143,12 @@ fn build_gateway_status_payload(
 #[tauri::command]
 pub async fn get_providers(
     state: State<'_, AppState>,
-) -> Result<HashMap<String, Provider>, String> {
+) -> Result<HashMap<String, ProviderPayload>, String> {
     let config = state
         .config
         .lock()
         .map_err(|e| format!("获取锁失败: {}", e))?;
-    Ok(config.providers.clone())
+    Ok(collect_provider_payloads(&config))
 }
 
 #[tauri::command]
@@ -75,8 +161,19 @@ pub async fn get_current_provider(state: State<'_, AppState>) -> Result<String, 
 }
 
 #[tauri::command]
-pub async fn add_provider(state: State<'_, AppState>, provider: Provider) -> Result<(), String> {
-    // 验证供应商配置
+pub async fn get_current_codex_provider(state: State<'_, AppState>) -> Result<String, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
+    Ok(config.current_codex.clone())
+}
+
+#[tauri::command]
+pub async fn add_provider(
+    state: State<'_, AppState>,
+    provider: ProviderPayload,
+) -> Result<(), String> {
     provider.validate()?;
 
     let mut config = state
@@ -84,16 +181,25 @@ pub async fn add_provider(state: State<'_, AppState>, provider: Provider) -> Res
         .lock()
         .map_err(|e| format!("获取锁失败: {}", e))?;
 
-    // 检查ID是否已存在
-    if config.providers.contains_key(&provider.id) {
+    if config.providers.contains_key(&provider.id) || config.codex_providers.contains_key(&provider.id) {
         return Err("供应商ID已存在".to_string());
     }
 
-    config.providers.insert(provider.id.clone(), provider);
-
-    // 如果是第一个供应商，设为当前
-    if config.current.is_empty() {
-        config.current = config.providers.keys().next().unwrap().clone();
+    match provider.provider_type {
+        ProviderType::Claude => {
+            let provider = provider.into_claude_provider()?;
+            config.providers.insert(provider.id.clone(), provider);
+            if config.current.is_empty() {
+                config.current = config.providers.keys().next().cloned().unwrap_or_default();
+            }
+        }
+        ProviderType::Codex => {
+            let provider = provider.into_codex_provider()?;
+            config.codex_providers.insert(provider.id.clone(), provider);
+            if config.current_codex.is_empty() {
+                config.current_codex = config.codex_providers.keys().next().cloned().unwrap_or_default();
+            }
+        }
     }
 
     drop(config);
@@ -101,36 +207,77 @@ pub async fn add_provider(state: State<'_, AppState>, provider: Provider) -> Res
 }
 
 #[tauri::command]
-pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> Result<(), String> {
-    // 验证供应商配置
+pub async fn update_provider(
+    state: State<'_, AppState>,
+    provider: ProviderPayload,
+) -> Result<(), String> {
     provider.validate()?;
 
-    let (is_current, is_gateway_target, gateway_enabled, gateway_port) = {
-        let mut config = state
-            .config
-            .lock()
-            .map_err(|e| format!("获取锁失败: {}", e))?;
+    match provider.provider_type {
+        ProviderType::Claude => {
+            let provider = provider.into_claude_provider()?;
+            let (is_current, is_gateway_target, gateway_enabled, gateway_port) = {
+                let mut config = state
+                    .config
+                    .lock()
+                    .map_err(|e| format!("获取锁失败: {}", e))?;
 
-        if !config.providers.contains_key(&provider.id) {
-            return Err("供应商不存在".to_string());
+                if config.codex_providers.contains_key(&provider.id) {
+                    return Err("供应商类型不匹配，无法更新为 Claude 类型".to_string());
+                }
+
+                if !config.providers.contains_key(&provider.id) {
+                    return Err("供应商不存在".to_string());
+                }
+
+                let is_current = config.current == provider.id;
+                let is_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(provider.id.as_str());
+                let gateway_enabled = config.api_gateway.enabled;
+                let gateway_port = config.api_gateway.port;
+                config.providers.insert(provider.id.clone(), provider.clone());
+                (is_current, is_gateway_target, gateway_enabled, gateway_port)
+            };
+
+            if is_current {
+                sync_runtime_provider(state.inner(), &provider).await?;
+            }
+
+            if gateway_enabled && is_gateway_target {
+                api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+            }
         }
+        ProviderType::Codex => {
+            let provider = provider.into_codex_provider()?;
+            let (is_current, is_gateway_target, gateway_enabled, gateway_port) = {
+                let mut config = state
+                    .config
+                    .lock()
+                    .map_err(|e| format!("获取锁失败: {}", e))?;
 
-        let is_current = config.current == provider.id;
-        let is_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(provider.id.as_str());
-        let gateway_enabled = config.api_gateway.enabled;
-        let gateway_port = config.api_gateway.port;
-        config
-            .providers
-            .insert(provider.id.clone(), provider.clone());
-        (is_current, is_gateway_target, gateway_enabled, gateway_port)
-    };
+                if config.providers.contains_key(&provider.id) {
+                    return Err("供应商类型不匹配，无法更新为 Codex 类型".to_string());
+                }
 
-    if is_current {
-        sync_runtime_provider(state.inner(), &provider).await?;
-    }
+                if !config.codex_providers.contains_key(&provider.id) {
+                    return Err("供应商不存在".to_string());
+                }
 
-    if gateway_enabled && is_gateway_target {
-        api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+                let is_current = config.current_codex == provider.id;
+                let is_gateway_target = config.codex_gateway.target_provider_id.as_deref() == Some(provider.id.as_str());
+                let gateway_enabled = config.codex_gateway.enabled;
+                let gateway_port = config.codex_gateway.port;
+                config.codex_providers.insert(provider.id.clone(), provider.clone());
+                (is_current, is_gateway_target, gateway_enabled, gateway_port)
+            };
+
+            if is_current {
+                codex_config::sync_local_gateway_provider(&provider, gateway_port)?;
+            }
+
+            if gateway_enabled && is_gateway_target {
+                codex_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+            }
+        }
     }
 
     state.save()
@@ -138,64 +285,122 @@ pub async fn update_provider(state: State<'_, AppState>, provider: Provider) -> 
 
 #[tauri::command]
 pub async fn delete_provider(state: State<'_, AppState>, id: String) -> Result<(), String> {
-    let (next_current_provider, next_gateway_provider, stop_gateway, gateway_port) = {
-        let mut config = state
+    if {
+        let config = state
             .config
             .lock()
             .map_err(|e| format!("获取锁失败: {}", e))?;
+        config.providers.contains_key(&id)
+    } {
+        let (next_current_provider, next_gateway_provider, stop_gateway, gateway_port) = {
+            let mut config = state
+                .config
+                .lock()
+                .map_err(|e| format!("获取锁失败: {}", e))?;
 
-        if !config.providers.contains_key(&id) {
-            return Err("供应商不存在".to_string());
-        }
+            let removed_current = config.current == id;
+            let removed_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(id.as_str());
+            config.providers.remove(&id);
 
-        let removed_current = config.current == id;
-        let removed_gateway_target = config.api_gateway.target_provider_id.as_deref() == Some(id.as_str());
-        config.providers.remove(&id);
+            if removed_current {
+                config.current = config.providers.keys().next().cloned().unwrap_or_default();
+            }
 
-        if removed_current {
-            config.current = config
-                .providers
-                .keys()
-                .next()
-                .unwrap_or(&String::new())
-                .clone();
-        }
+            if removed_gateway_target {
+                config.api_gateway.target_provider_id = if config.current.is_empty() {
+                    None
+                } else {
+                    Some(config.current.clone())
+                };
+            }
 
-        if removed_gateway_target {
-            config.api_gateway.target_provider_id = if config.current.is_empty() {
-                None
+            let next_current_provider = removed_current
+                .then(|| config.providers.get(&config.current).cloned())
+                .flatten();
+            let next_gateway_provider = if config.api_gateway.enabled && removed_gateway_target {
+                config
+                    .api_gateway
+                    .target_provider_id
+                    .as_ref()
+                    .and_then(|provider_id| config.providers.get(provider_id))
+                    .cloned()
             } else {
-                Some(config.current.clone())
+                None
             };
+            let stop_gateway = config.api_gateway.enabled
+                && removed_gateway_target
+                && next_gateway_provider.is_none();
+            let gateway_port = config.api_gateway.port;
+
+            (next_current_provider, next_gateway_provider, stop_gateway, gateway_port)
+        };
+
+        if let Some(provider) = next_current_provider {
+            sync_runtime_provider(state.inner(), &provider).await?;
         }
 
-        let next_current_provider = removed_current
-            .then(|| config.providers.get(&config.current).cloned())
-            .flatten();
-        let next_gateway_provider = if config.api_gateway.enabled && removed_gateway_target {
-            config
-                .api_gateway
-                .target_provider_id
-                .as_ref()
-                .and_then(|provider_id| config.providers.get(provider_id))
-                .cloned()
-        } else {
-            None
+        if let Some(provider) = next_gateway_provider {
+            api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+        } else if stop_gateway {
+            api_gateway::stop(state.inner()).await?;
+        }
+    } else {
+        let (next_current_provider, next_gateway_provider, stop_gateway, gateway_port) = {
+            let mut config = state
+                .config
+                .lock()
+                .map_err(|e| format!("获取锁失败: {}", e))?;
+
+            if !config.codex_providers.contains_key(&id) {
+                return Err("供应商不存在".to_string());
+            }
+
+            let removed_current = config.current_codex == id;
+            let removed_gateway_target = config.codex_gateway.target_provider_id.as_deref() == Some(id.as_str());
+            config.codex_providers.remove(&id);
+
+            if removed_current {
+                config.current_codex = config.codex_providers.keys().next().cloned().unwrap_or_default();
+            }
+
+            if removed_gateway_target {
+                config.codex_gateway.target_provider_id = if config.current_codex.is_empty() {
+                    None
+                } else {
+                    Some(config.current_codex.clone())
+                };
+            }
+
+            let next_current_provider = removed_current
+                .then(|| config.codex_providers.get(&config.current_codex).cloned())
+                .flatten();
+            let next_gateway_provider = if config.codex_gateway.enabled && removed_gateway_target {
+                config
+                    .codex_gateway
+                    .target_provider_id
+                    .as_ref()
+                    .and_then(|provider_id| config.codex_providers.get(provider_id))
+                    .cloned()
+            } else {
+                None
+            };
+            let stop_gateway = config.codex_gateway.enabled
+                && removed_gateway_target
+                && next_gateway_provider.is_none();
+            let gateway_port = config.codex_gateway.port;
+
+            (next_current_provider, next_gateway_provider, stop_gateway, gateway_port)
         };
-        let stop_gateway = config.api_gateway.enabled && removed_gateway_target && next_gateway_provider.is_none();
-        let gateway_port = config.api_gateway.port;
 
-        (next_current_provider, next_gateway_provider, stop_gateway, gateway_port)
-    };
+        if let Some(provider) = next_current_provider {
+            codex_config::sync_local_gateway_provider(&provider, gateway_port)?;
+        }
 
-    if let Some(provider) = next_current_provider {
-        sync_runtime_provider(state.inner(), &provider).await?;
-    }
-
-    if let Some(provider) = next_gateway_provider {
-        api_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
-    } else if stop_gateway {
-        api_gateway::stop(state.inner()).await?;
+        if let Some(provider) = next_gateway_provider {
+            codex_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+        } else if stop_gateway {
+            codex_gateway::stop(state.inner()).await?;
+        }
     }
 
     state.save()
@@ -241,6 +446,48 @@ pub async fn switch_provider(
     });
     if let Err(e) = app.emit_to("main", "provider-switched", event_data) {
         log::error!("发射供应商切换事件失败: {}", e);
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn switch_codex_provider(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    provider_id: String,
+) -> Result<bool, String> {
+    let (provider, gateway_enabled, gateway_port) = {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+
+        let provider = config
+            .codex_providers
+            .get(&provider_id)
+            .ok_or("供应商不存在")?
+            .clone();
+
+        config.current_codex = provider_id.clone();
+        config.codex_gateway.target_provider_id = Some(provider_id.clone());
+        (provider, config.codex_gateway.enabled, config.codex_gateway.port)
+    };
+
+    codex_config::sync_local_gateway_provider(&provider, gateway_port)?;
+
+    if gateway_enabled {
+        codex_gateway::start_or_update(state.inner(), &provider, gateway_port).await?;
+    }
+
+    state.save()?;
+
+    let event_data = serde_json::json!({
+        "providerId": provider_id,
+        "providerType": "codex",
+    });
+    if let Err(error) = app.emit_to("main", "provider-switched", event_data) {
+        log::error!("发射 Codex 供应商切换事件失败: {}", error);
     }
 
     Ok(true)
@@ -350,6 +597,20 @@ pub async fn get_api_gateway_status(
 }
 
 #[tauri::command]
+pub async fn get_codex_gateway_status(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let running = codex_gateway::is_running(state.inner())?;
+    let active_route = codex_gateway::get_route_snapshot(state.inner()).await?;
+    let config = state
+        .config
+        .lock()
+        .map_err(|e| format!("获取锁失败: {}", e))?;
+
+    build_codex_gateway_status_payload(&config, running, active_route)
+}
+
+#[tauri::command]
 pub async fn set_api_gateway_enabled(
     state: State<'_, AppState>,
     enabled: bool,
@@ -387,6 +648,64 @@ pub async fn set_api_gateway_enabled(
 
     state.save()?;
     get_api_gateway_status(state).await
+}
+
+#[tauri::command]
+pub async fn set_codex_gateway_enabled(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<serde_json::Value, String> {
+    let (provider, port) = {
+        let config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        let provider = selected_codex_provider(&config);
+        (provider, config.codex_gateway.port)
+    };
+
+    let provider = provider.ok_or("当前没有可用的 Codex 供应商")?;
+
+    if enabled {
+        codex_gateway::start_or_update(state.inner(), &provider, port).await?;
+    } else {
+        codex_gateway::stop(state.inner()).await?;
+    }
+
+    codex_config::sync_local_gateway_provider(&provider, port)?;
+
+    {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        config.codex_gateway.enabled = enabled;
+        config.current_codex = provider.id.clone();
+        if enabled {
+            config.codex_gateway.target_provider_id = Some(provider.id.clone());
+        }
+    }
+
+    state.save()?;
+    get_codex_gateway_status(state).await
+}
+
+#[tauri::command]
+pub async fn install_codex_gateway_provider(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let (provider, port) = {
+        let config = state
+            .config
+            .lock()
+            .map_err(|e| format!("获取锁失败: {}", e))?;
+        let provider = selected_codex_provider(&config);
+        (provider, config.codex_gateway.port)
+    };
+
+    let provider = provider.ok_or("当前没有可用的 Codex 供应商")?;
+    codex_config::install_local_gateway_provider(&provider, port)?;
+    get_codex_gateway_status(state).await
 }
 
 #[tauri::command]
@@ -457,13 +776,16 @@ mod tests {
                 (provider_a.id.clone(), provider_a.clone()),
                 (provider_b.id.clone(), provider_b.clone()),
             ]),
+            codex_providers: HashMap::new(),
             current: provider_b.id.clone(),
+            current_codex: String::new(),
             app_mode: AppMode::Main,
             api_gateway: ApiGatewayConfig {
                 enabled: true,
                 port: 3456,
                 target_provider_id: Some(provider_a.id.clone()),
             },
+            codex_gateway: crate::store::CodexGatewayConfig::default(),
         };
 
         let payload = build_gateway_status_payload(&config, false, None).unwrap();
@@ -482,13 +804,16 @@ mod tests {
                 (provider_a.id.clone(), provider_a.clone()),
                 (provider_b.id.clone(), provider_b.clone()),
             ]),
+            codex_providers: HashMap::new(),
             current: provider_a.id.clone(),
+            current_codex: String::new(),
             app_mode: AppMode::Main,
             api_gateway: ApiGatewayConfig {
                 enabled: true,
                 port: 3456,
                 target_provider_id: Some(provider_a.id.clone()),
             },
+            codex_gateway: crate::store::CodexGatewayConfig::default(),
         };
 
         let payload = build_gateway_status_payload(
